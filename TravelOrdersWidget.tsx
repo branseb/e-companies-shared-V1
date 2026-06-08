@@ -519,11 +519,11 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                 <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
                     <Stack sx={{ gap: 0.75 }}>
                         <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                            <TextField type="date" size="small" sx={{ flex: '1 1 110px', maxWidth: { sm: 145 } }} label="Dátum"
+                            <TextField type="date" size="small" sx={{ flex: 1 }} label="Dátum"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.date}
                                 onChange={e => update(i, 'date', e.target.value)} />
-                            <TextField select size="small" sx={{ flex: '0 0 80px' }} label="Doprava"
+                            <TextField select size="small" sx={{ width: 80 }} label="Doprava"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.transport}
                                 onChange={e => update(i, 'transport', e.target.value)}>
@@ -531,7 +531,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                     <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
                                 ))}
                             </TextField>
-                            <Stack direction="row" sx={{ ml: 'auto' }}>
+                            <Stack direction="row">
                                 <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
                                     <ArrowUpward sx={{ fontSize: 14 }} />
                                 </IconButton>
@@ -550,31 +550,28 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 </IconButton>
                             </Stack>
                         </Stack>
-                        {/* From / To — 2 stĺpce na sm+, lineárne na xs */}
-                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 0.75 }}>
-                            <Stack direction="row" sx={{ gap: 0.5 }}>
-                                <TextField size="small" label="Odchod z" sx={{ flex: 1, minWidth: 0 }}
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.fromPlace}
-                                    onChange={e => update(i, 'fromPlace', e.target.value)} />
-                                <TextField type="time" size="small" sx={{ width: 90, flex: '0 0 90px' }} label="Čas od"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.fromTime}
-                                    onChange={e => update(i, 'fromTime', e.target.value)} />
-                            </Stack>
-                            <Stack direction="row" sx={{ gap: 0.5 }}>
-                                <TextField size="small" label="Príchod do" sx={{ flex: 1, minWidth: 0 }}
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.toPlace}
-                                    onChange={e => update(i, 'toPlace', e.target.value)} />
-                                <TextField type="time" size="small" sx={{ width: 90, flex: '0 0 90px' }} label="Čas do"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.toTime}
-                                    onChange={e => update(i, 'toTime', e.target.value)} />
-                            </Stack>
-                        </Box>
                         <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField type="number" size="small" sx={{ width: 90 }} label="km"
+                            <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.fromPlace}
+                                onChange={e => update(i, 'fromPlace', e.target.value)} />
+                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.fromTime}
+                                onChange={e => update(i, 'fromTime', e.target.value)} />
+                        </Stack>
+                        <Stack direction="row" sx={{ gap: 0.5 }}>
+                            <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.toPlace}
+                                onChange={e => update(i, 'toPlace', e.target.value)} />
+                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.toTime}
+                                onChange={e => update(i, 'toTime', e.target.value)} />
+                        </Stack>
+                        <Stack direction="row" sx={{ gap: 0.5 }}>
+                            <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
@@ -1291,26 +1288,24 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                         value={trip.purpose ?? ''}
                                         onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
                                 </Stack>
-                                {/* Odchod — miesto + dátum + čas; na xs sa zalomí pod seba */}
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                    <TextField label="Miesto odchodu" size="small" sx={{ flex: '1 1 140px', minWidth: 0 }}
+                                <Stack direction="row" sx={{ gap: 1.5 }}>
+                                    <TextField label="Miesto odchodu" size="small" sx={{ flex: 1, minWidth: 0 }}
                                         value={trip.departureLocation ?? ''}
                                         onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
-                                    <TextField label="Dátum odchodu" type="date" size="small" sx={{ flex: '1 1 130px', maxWidth: { sm: 145 } }}
+                                    <TextField label="Dátum odchodu" type="date" size="small" sx={{ width: 145, flex: '0 0 auto' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.departureDate}
                                         onChange={e => updateTrip(ti, 'departureDate', e.target.value)} />
-                                    <TextField label="Čas" type="time" size="small" sx={{ flex: '0 0 100px' }}
+                                    <TextField label="Čas" type="time" size="small" sx={{ width: 100, flex: '0 0 auto' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.departureTime ?? ''}
                                         onChange={e => updateTrip(ti, 'departureTime', e.target.value)} />
                                 </Stack>
-                                {/* Návrat — miesto + dátum; na xs sa zalomí */}
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                    <TextField label="Miesto návratu" size="small" sx={{ flex: '1 1 140px', minWidth: 0 }}
+                                <Stack direction="row" sx={{ gap: 1.5 }}>
+                                    <TextField label="Miesto návratu" size="small" sx={{ flex: 1, minWidth: 0 }}
                                         value={trip.returnLocation ?? ''}
                                         onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
-                                    <TextField label="Dátum návratu" type="date" size="small" sx={{ flex: '1 1 130px', maxWidth: { sm: 145 } }}
+                                    <TextField label="Dátum návratu" type="date" size="small" sx={{ width: 145, flex: '0 0 auto' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.returnDate ?? ''}
                                         onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
