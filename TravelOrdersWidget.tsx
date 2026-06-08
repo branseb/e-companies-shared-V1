@@ -82,6 +82,7 @@ export type EmployeeRecord = {
     name: string
     address?: string | null
     defaultLocation?: string | null
+    defaultFuelConsumption?: number | null
 }
 
 export type TravelOrdersWidgetProps = {
@@ -95,8 +96,8 @@ export type TravelOrdersWidgetProps = {
     ratesHistory?: StravneRates | null
     onRatesChange?: (history: StravneRates) => void
     employees?: EmployeeRecord[]
-    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
-    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
+    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number }) => Promise<void>
+    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number }) => Promise<void>
     onEmployeeDelete?: (id: number) => Promise<void>
 }
 
@@ -617,8 +618,8 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
 
 type EmpDialogProps = {
     employees: EmployeeRecord[]
-    onCreate: (data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
-    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
+    onCreate: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number }) => Promise<void>
+    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number }) => Promise<void>
     onDelete: (id: number) => Promise<void>
     onClose: () => void
 }
@@ -626,11 +627,11 @@ type EmpDialogProps = {
 const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
     const [adding, setAdding] = useState(false)
-    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '' })
+    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '' })
     const [saving, setSaving] = useState(false)
 
-    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '' }); setAdding(true) }
-    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '' }); setAdding(true) }
+    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '' }); setAdding(true) }
+    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '', defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '' }); setAdding(true) }
     const cancel = () => { setAdding(false); setEditing(null) }
 
     const handleSave = async () => {
@@ -641,6 +642,7 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                 name: form.name.trim(),
                 address: form.address.trim() || undefined,
                 defaultLocation: form.defaultLocation.trim() || undefined,
+                defaultFuelConsumption: form.defaultFuelConsumption ? Number(form.defaultFuelConsumption) : undefined,
             }
             if (editing) await onUpdate(editing.id, data)
             else         await onCreate(data)
@@ -660,9 +662,13 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                         <Stack key={emp.id} direction="row" sx={{ alignItems: 'center', gap: 1 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 500 }}>{emp.name}</Typography>
-                                {(emp.address || emp.defaultLocation) && (
+                                {(emp.address || emp.defaultLocation || emp.defaultFuelConsumption != null) && (
                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                        {[emp.address, emp.defaultLocation ? `📍 ${emp.defaultLocation}` : ''].filter(Boolean).join(' · ')}
+                                        {[
+                                            emp.address,
+                                            emp.defaultLocation ? `📍 ${emp.defaultLocation}` : '',
+                                            emp.defaultFuelConsumption != null ? `⛽ ${emp.defaultFuelConsumption} l/100km` : '',
+                                        ].filter(Boolean).join(' · ')}
                                     </Typography>
                                 )}
                             </Box>
@@ -684,6 +690,10 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                                 placeholder="napr. Košice"
                                 value={form.defaultLocation}
                                 onChange={e => setForm(f => ({ ...f, defaultLocation: e.target.value }))} />
+                            <TextField label="Predvolená spotreba (l/100km)" type="number" size="small" fullWidth
+                                slotProps={{ htmlInput: { step: 0.1 } }}
+                                value={form.defaultFuelConsumption}
+                                onChange={e => setForm(f => ({ ...f, defaultFuelConsumption: e.target.value }))} />
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <Button size="small" onClick={cancel} disabled={saving}>Zrušiť</Button>
                                 <Button size="small" variant="contained" onClick={handleSave}
@@ -1228,6 +1238,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                         returnLocation:    t.returnLocation    || loc,
                                     })))
                                 }
+                                if (val.defaultFuelConsumption != null) set('fuelConsumption', val.defaultFuelConsumption)
                             }
                         }}
                         renderInput={params => (
