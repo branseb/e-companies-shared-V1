@@ -1166,10 +1166,15 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
         set('trips', trips.length ? trips : null)
     }
 
-    const addTrip = () => set('trips', [
-        ...(form.trips ?? []),
-        emptyTrip(form.departureDate || new Date().toISOString().split('T')[0], form.transportType ?? 'car'),
-    ])
+    const addTrip = () => {
+        const loc = employees.find(e => e.name === form.employee)?.defaultLocation ?? ''
+        const trips0 = form.trips ?? []
+        const lastTrip = trips0[trips0.length - 1]
+        const date = lastTrip?.returnDate || form.departureDate || new Date().toISOString().split('T')[0]
+        const trip = emptyTrip(date, form.transportType ?? 'car')
+        if (loc) { trip.departureLocation = loc; trip.returnLocation = loc }
+        set('trips', [...(form.trips ?? []), trip])
+    }
 
     const handleSave = async () => {
         if (!form.employee.trim()) return
