@@ -381,11 +381,11 @@ const emptyForm = (): TravelOrderInput => ({
     currency:          'EUR',
     status:            'draft',
     notes:             '',
-    freeRanajky:       null,
-    freeObed:          null,
-    freeVecera:        null,
-    includeAccounting:  null,
-    includeAdminFields: null,
+    freeRanajky:       false,
+    freeObed:          false,
+    freeVecera:        false,
+    includeAccounting:  false,
+    includeAdminFields: false,
     applyAmortization:  null,
     applyFuelCost:      null,
     advances:           null,
@@ -1020,9 +1020,9 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     const mealDeductionPct = useMemo(() => {
         const firstDate = form.trips?.[0]?.departureDate ?? new Date().toISOString().split('T')[0]
         const entry = getRatesForDate(ratesHistory, firstDate)
-        return (form.freeRanajky !== false ? entry.meals.ranajky : 0)
-             + (form.freeObed    !== false ? entry.meals.obed    : 0)
-             + (form.freeVecera  !== false ? entry.meals.vecera  : 0)
+        return (form.freeRanajky ? entry.meals.ranajky : 0)
+             + (form.freeObed    ? entry.meals.obed    : 0)
+             + (form.freeVecera  ? entry.meals.vecera  : 0)
     }, [form.trips, form.freeRanajky, form.freeObed, form.freeVecera, ratesHistory])
 
     const netStravneByCurrency = useMemo(() => {
@@ -1410,8 +1410,8 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                             <FormControlLabel key={field}
                                 control={
                                     <Checkbox size="small"
-                                        checked={form[field] !== false}
-                                        onChange={e => set(field, e.target.checked ? null : false)} />
+                                        checked={!!form[field]}
+                                        onChange={e => set(field, e.target.checked)} />
                                 }
                                 label={field === 'freeRanajky' ? 'Raňajky' : field === 'freeObed' ? 'Obed' : 'Večera'}
                                 sx={{ mr: 0 }}
@@ -1464,16 +1464,16 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                     <FormControlLabel
                         control={
                             <Checkbox size="small"
-                                checked={form.includeAccounting !== false}
-                                onChange={e => set('includeAccounting', e.target.checked ? null : false)} />
+                                checked={!!form.includeAccounting}
+                                onChange={e => set('includeAccounting', e.target.checked)} />
                         }
                         label="Zahrnúť vyúčtovanie do PDF"
                     />
                     <FormControlLabel
                         control={
                             <Checkbox size="small"
-                                checked={form.includeAdminFields !== false}
-                                onChange={e => set('includeAdminFields', e.target.checked ? null : false)} />
+                                checked={!!form.includeAdminFields}
+                                onChange={e => set('includeAdminFields', e.target.checked)} />
                         }
                         label="Zobraziť administratívne polia (os. číslo, útvar, tel., prac. čas, spolucestujúci)"
                     />
