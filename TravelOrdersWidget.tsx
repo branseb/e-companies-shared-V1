@@ -17,8 +17,8 @@ export type TripSegment = {
     transport: string
     km: number | null
     stravne: number | null
-    currency: string        // 'EUR' alebo iná (CZK, HUF...)
-    country?: string | null // krajina pre výpočet stravného ('SK', 'CZ'...)
+    currency?: string | null // zastarané — mena sa odvodzuje z krajiny
+    country?: string | null  // krajina pre výpočet stravného ('SK', 'CZ'...)
     nbsDate?: string | null
     expenses?: Array<{ type: string; amount: number; currency: string }> | null
 }
@@ -268,7 +268,8 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
                 tos.reduce((a, b) => a > b ? a : b),
             )
             if (blockHours <= 0) continue
-            const currency = block.segs.find(s => s.currency)?.currency ?? 'EUR'
+            const countryOpt = COUNTRY_OPTIONS.find(c => c.code === block.country)
+            const currency = countryOpt?.currency ?? entry.foreign[block.country]?.currency ?? 'EUR'
             if (!byCountry[block.country]) byCountry[block.country] = { hours: 0, currency }
             byCountry[block.country].hours += blockHours
         }
@@ -340,7 +341,6 @@ const emptySegment = (date: string, transport: string, country = 'SK'): TripSegm
     transport,
     km: null,
     stravne: null,
-    currency: 'EUR',
     country,
     nbsDate: null,
 })
@@ -501,7 +501,10 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                     </Stack>
                 ))}
                 <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
-                    onClick={() => updateExpenses(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: seg.currency || 'EUR' }])}>
+                    onClick={() => {
+                        const c = COUNTRY_OPTIONS.find(o => o.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
+                        updateExpenses(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: c }])
+                    }}>
                     Pridať výdavok
                 </Button>
             </Stack>
@@ -570,10 +573,6 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField size="small" sx={{ width: 72 }} label="Mena"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.currency}
-                                onChange={e => update(i, 'currency', e.target.value.toUpperCase())} />
                             <TextField select size="small" sx={{ width: 90 }} label="Krajina"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.country ?? defaultCountry}
@@ -997,9 +996,15 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
 
     const foreignCurrencies = useMemo(() => {
-        const all = (form.trips ?? []).flatMap(t => t.segments).map(s => s.currency).filter(c => c && c !== 'EUR')
-        return [...new Set(all)]
-    }, [form.trips])
+        const countries = [...new Set(
+            (form.trips ?? []).flatMap(t => t.segments)
+                .map(s => s.country ?? 'SK')
+                .filter(c => c !== 'SK')
+        )]
+        const allCtry = getAllCountries(ratesHistory)
+        const curs = countries.map(c => allCtry.find(o => o.code === c)?.currency ?? 'EUR').filter(c => c !== 'EUR')
+        return [...new Set(curs)]
+    }, [form.trips, ratesHistory])
 
     // Stravné počítané za celý deň v krajine (nie per-segment)
     const segStravneByCurrency = useMemo(() => {
@@ -1098,11 +1103,10 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
         const dest    = trip.destination
         const ctry    = allCountries.find(c => c.code === (trip.country ?? 'SK')) ?? allCountries[0]
         const foreign = ctry.code !== 'SK'
-        const foreignCur = ctry.currency
         const bp      = ctry.borderPrefix
 
-        const mkSeg = (date: string, from: string, fromTime: string, to: string, cur: string, toTime = '', segCountry = 'SK'): TripSegment =>
-            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km: null, stravne: null, currency: cur, country: segCountry, nbsDate: null })
+        const mkSeg = (date: string, from: string, fromTime: string, to: string, toTime = '', segCountry = 'SK'): TripSegment =>
+            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km: null, stravne: null, country: segCountry, nbsDate: null })
 
         // Medzidni — celý deň (pobyt na mieste rokovania)
         const midDays: string[] = []
@@ -1113,9 +1117,8 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
             nd.setDate(nd.getDate() + d)
             midDays.push(nd.toISOString().split('T')[0])
         }
-        const midCur = foreign ? foreignCur : 'EUR'
         const midCtry = foreign ? ctry.code : 'SK'
-        const midSegs: TripSegment[] = midDays.map(date => mkSeg(date, dest, '00:00', dest, midCur, '00:00', midCtry))
+        const midSegs: TripSegment[] = midDays.map(date => mkSeg(date, dest, '00:00', dest, '00:00', midCtry))
 
         // Ak ostávam cez noc, príchod k destináci = 0:00, odchod z destinácie = 0:00
         const overnight = dayDiff >= 1
@@ -1123,15 +1126,15 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
         const retFromTime = overnight ? '00:00' : ''
 
         const segs: TripSegment[] = foreign ? [
-            mkSeg(depDate, depLoc,         depTime,      `hr. SK-${bp}`, 'EUR',       '',          'SK'),
-            mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          foreignCur,  arrToTime,   ctry.code),
+            mkSeg(depDate, depLoc,         depTime,      `hr. SK-${bp}`, '',          'SK'),
+            mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          arrToTime,   ctry.code),
             ...midSegs,
-            mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, foreignCur,  '',          ctry.code),
-            mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        'EUR',       '',          'SK'),
+            mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, '',          ctry.code),
+            mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        '',          'SK'),
         ] : [
-            mkSeg(depDate, depLoc, depTime,    dest,   'EUR', arrToTime, 'SK'),
+            mkSeg(depDate, depLoc, depTime,    dest,   arrToTime, 'SK'),
             ...midSegs,
-            mkSeg(retDate, dest,   retFromTime, retLoc, 'EUR', '', 'SK'),
+            mkSeg(retDate, dest,   retFromTime, retLoc, '', 'SK'),
         ]
 
         const trips = [...(form.trips ?? [])]
