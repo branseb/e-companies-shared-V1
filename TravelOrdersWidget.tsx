@@ -1238,7 +1238,12 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                         returnLocation:    t.returnLocation    || loc,
                                     })))
                                 }
-                                if (val.defaultFuelConsumption != null) set('fuelConsumption', val.defaultFuelConsumption)
+                                if (val.defaultFuelConsumption != null) {
+                                    set('fuelConsumption', val.defaultFuelConsumption)
+                                    set('transportType', 'car')
+                                } else {
+                                    set('transportType', 'company_car')
+                                }
                             }
                         }}
                         renderInput={params => (
