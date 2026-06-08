@@ -367,11 +367,9 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
         const allSegments = d.trips.flatMap(t => (t.segments ?? []) as TripSegment[])
         for (const ds of calcDailyStravne(allSegments, rates)) {
             const cur = ds.currency || 'EUR'
-            if (d.useExchangeRates && cur !== 'EUR') {
-                const rate = d.exchangeRates?.[cur]
-                if (rate && rate > 0) {
-                    stravneByCurrency['EUR'] = (stravneByCurrency['EUR'] ?? 0) + +(ds.stravne / rate).toFixed(2)
-                }
+            const rate = cur !== 'EUR' ? d.exchangeRates?.[cur] : undefined
+            if (rate && rate > 0) {
+                stravneByCurrency['EUR'] = (stravneByCurrency['EUR'] ?? 0) + +(ds.stravne / rate).toFixed(2)
             } else {
                 stravneByCurrency[cur] = (stravneByCurrency[cur] ?? 0) + ds.stravne
             }

@@ -1425,46 +1425,28 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                         )}
                     </Stack>
 
-                    {/* Prepočet cudzích mien na EUR */}
+                    {/* Prepočet cudzích mien na EUR — per-mena */}
                     {foreignCurrencies.length > 0 && (
                         <Stack sx={{ gap: 1 }}>
-                            <FormControlLabel
-                                control={
-                                    <Checkbox size="small"
-                                        checked={!!form.useExchangeRates}
-                                        onChange={e => {
-                                            const on = e.target.checked
-                                            set('useExchangeRates', on || null)
-                                            if (on && !form.exchangeRateDate) {
-                                                const dep = form.trips?.[0]?.departureDate
-                                                if (dep) {
-                                                    const d = new Date(dep)
-                                                    d.setDate(d.getDate() - 1)
-                                                    set('exchangeRateDate', d.toISOString().split('T')[0])
-                                                }
-                                            }
-                                        }} />
-                                }
-                                label="Prepočítať cudzie meny na EUR (kurz NBS)"
-                            />
-                            {form.useExchangeRates && (
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap', alignItems: 'center', pl: 3.5 }}>
-                                    <TextField label="Dátum kurzu NBS" type="date" size="small" sx={{ width: 175 }}
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={form.exchangeRateDate ?? ''}
-                                        onChange={e => set('exchangeRateDate', e.target.value || null)} />
-                                    {foreignCurrencies.map(currency => (
-                                        <TextField key={currency}
-                                            label={`1 EUR = ? ${currency}`}
-                                            type="number" size="small" sx={{ width: 155 }}
-                                            value={form.exchangeRates?.[currency] ?? ''}
-                                            onChange={e => set('exchangeRates', {
-                                                ...form.exchangeRates,
-                                                [currency]: e.target.value ? Number(e.target.value) : undefined,
-                                            } as Record<string, number>)} />
-                                    ))}
-                                </Stack>
-                            )}
+                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                Kurz NBS — vyplň pre meny, ktoré chceš prepočítať na EUR (ostatné zostanú v pôvodnej mene)
+                            </Typography>
+                            <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <TextField label="Dátum kurzu NBS" type="date" size="small" sx={{ width: 175 }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={form.exchangeRateDate ?? ''}
+                                    onChange={e => set('exchangeRateDate', e.target.value || null)} />
+                                {foreignCurrencies.map(currency => (
+                                    <TextField key={currency}
+                                        label={`1 EUR = ? ${currency}`}
+                                        type="number" size="small" sx={{ width: 155 }}
+                                        value={form.exchangeRates?.[currency] ?? ''}
+                                        onChange={e => set('exchangeRates', {
+                                            ...form.exchangeRates,
+                                            [currency]: e.target.value ? Number(e.target.value) : undefined,
+                                        } as Record<string, number>)} />
+                                ))}
+                            </Stack>
                         </Stack>
                     )}
                     <Stack direction="row" sx={{ gap: 1.5 }}>
