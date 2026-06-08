@@ -233,6 +233,34 @@ const calcSegStravne = (fromTime: string, toTime: string, country: string, entry
     }
 }
 
+// Stravné sa počíta za celý deň v danej krajine (min fromTime → max toTime)
+type DayStravneEntry = { date: string; country: string; currency: string; hours: number; stravne: number }
+
+export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneRates): DayStravneEntry[] => {
+    // Zoskupíme segmenty podľa (dátum, krajina)
+    const groups: Record<string, TripSegment[]> = {}
+    for (const seg of segments) {
+        const key = `${seg.date}__${seg.country ?? 'SK'}`
+        ;(groups[key] = groups[key] ?? []).push(seg)
+    }
+    const result: DayStravneEntry[] = []
+    for (const [key, segs] of Object.entries(groups)) {
+        const [date, country] = key.split('__')
+        const froms = segs.map(s => s.fromTime).filter(Boolean)
+        const tos   = segs.map(s => s.toTime).filter(Boolean)
+        if (!froms.length || !tos.length) continue
+        const minFrom = froms.reduce((a, b) => a < b ? a : b)
+        const maxTo   = tos.reduce((a, b) => a > b ? a : b)
+        const hours   = segHours(minFrom, maxTo)
+        const entry   = getRatesForDate(ratesHistory, date)
+        const stravne = calcSegStravne(minFrom, maxTo, country, entry)
+        if (!stravne) continue
+        const currency = segs.find(s => s.currency)?.currency ?? 'EUR'
+        result.push({ date, country, currency, hours: +hours.toFixed(1), stravne })
+    }
+    return result.sort((a, b) => a.date.localeCompare(b.date))
+}
+
 // ── Auto-výpočty ──────────────────────────────────────────────────────────────
 
 export const calcTripHours = (depDate: string, depTime: string, retDate: string, retTime: string): number => {
@@ -514,15 +542,11 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField type="number" size="small" sx={{ flex: 1 }} label="Stravné"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.stravne ?? ''}
-                                onChange={e => update(i, 'stravne', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField size="small" sx={{ width: 62 }} label="Mena"
+                            <TextField size="small" sx={{ width: 72 }} label="Mena"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.currency}
                                 onChange={e => update(i, 'currency', e.target.value.toUpperCase())} />
-                            <TextField select size="small" sx={{ width: 72 }} label="Krajina"
+                            <TextField select size="small" sx={{ width: 90 }} label="Krajina"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.country ?? defaultCountry}
                                 onChange={e => update(i, 'country', e.target.value)}>
@@ -902,18 +926,16 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
         return [...new Set(all)]
     }, [form.trips])
 
-    // Stravné zo segmentov zoskupené podľa meny
+    // Stravné počítané za celý deň v krajine (nie per-segment)
     const segStravneByCurrency = useMemo(() => {
         const map: Record<string, number> = {}
         for (const t of form.trips ?? []) {
-            for (const seg of t.segments) {
-                if (!seg.stravne) continue
-                const c = seg.currency || 'EUR'
-                map[c] = (map[c] ?? 0) + seg.stravne
+            for (const ds of calcDailyStravne(t.segments, ratesHistory)) {
+                map[ds.currency] = (map[ds.currency] ?? 0) + ds.stravne
             }
         }
         return map
-    }, [form.trips])
+    }, [form.trips, ratesHistory])
 
     const mealDeductionPct = useMemo(() => {
         const firstDate = form.trips?.[0]?.departureDate ?? new Date().toISOString().split('T')[0]
@@ -1184,6 +1206,21 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                     allCountries={allCountries}
                                     onChange={segs => updateTrip(ti, 'segments', segs)}
                                 />
+                                {/* Denné stravné — počítané za celý deň, nie per-segment */}
+                                {(() => {
+                                    const daily = calcDailyStravne(trip.segments, ratesHistory)
+                                    if (!daily.length) return null
+                                    return (
+                                        <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>Stravné:</Typography>
+                                            {daily.map((ds, di) => (
+                                                <Chip key={di} size="small" variant="outlined" color="info"
+                                                    label={`${fmtDate(ds.date)} ${ds.country !== 'SK' ? `(${ds.country}) ` : ''}${ds.hours}h → ${ds.stravne.toFixed(2)} ${ds.currency}`}
+                                                />
+                                            ))}
+                                        </Stack>
+                                    )
+                                })()}
                             </Stack>
                         </Paper>
                     ))}
@@ -1497,10 +1534,8 @@ export const TravelOrdersWidget = ({
                                     : r.destination
                                 const stravneMap: Record<string, number> = {}
                                 for (const t of r.trips ?? []) {
-                                    for (const seg of t.segments) {
-                                        if (!seg.stravne) continue
-                                        const c = seg.currency || 'EUR'
-                                        stravneMap[c] = (stravneMap[c] ?? 0) + seg.stravne
+                                    for (const ds of calcDailyStravne(t.segments, effectiveRates)) {
+                                        stravneMap[ds.currency] = (stravneMap[ds.currency] ?? 0) + ds.stravne
                                     }
                                 }
                                 const hasSegs = Object.keys(stravneMap).length > 0
