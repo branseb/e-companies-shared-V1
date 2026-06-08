@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-    Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
+    Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
     DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem, Paper,
     Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material'
@@ -581,6 +581,19 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 ))}
                             </TextField>
                         </Stack>
+                        {(() => {
+                            const country = seg.country ?? defaultCountry
+                            if (country === 'SK') return null
+                            const entry = segRates(seg.date)
+                            const fr = entry.foreign[country]
+                            if (fr && fr.rate_12 > 0) return null
+                            return (
+                                <Alert severity="warning" sx={{ py: 0, px: 1, fontSize: 11 }}>
+                                    Sadzba stravného pre <strong>{country}</strong> nie je nastavená.
+                                    Nastavte ju v <em>Sadzby stravného</em>.
+                                </Alert>
+                            )
+                        })()}
                     </Stack>
                     {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
                     <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
