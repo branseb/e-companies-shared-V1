@@ -997,7 +997,7 @@ type DialogProps = {
 }
 
 const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose }: DialogProps) => {
-    const fullScreen = useMediaQuery('(max-width:600px)')
+    const isMobile = useMediaQuery('(max-width:600px)')
     const [form, setForm] = useState<TravelOrderInput>(initial)
     const [saving, setSaving] = useState(false)
 
@@ -1207,7 +1207,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     }
 
     return (
-        <Dialog open onClose={onClose} maxWidth="xl" fullWidth fullScreen={fullScreen}>
+        <Dialog open onClose={onClose} maxWidth="xl" fullWidth fullScreen={isMobile}>
             <DialogTitle>{isNew ? 'Nový cestovný príkaz' : 'Upraviť cestovný príkaz'}</DialogTitle>
             <DialogContent>
                 <Stack sx={{ gap: 1.5, mt: 1 }}>
@@ -1249,50 +1249,91 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                     </IconButton>
                                 </Stack>
 
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                    <TextField label="Miesto rokovania" required size="small"
-                                        sx={{ flex: '1 1 160px' }}
-                                        value={trip.destination}
-                                        onChange={e => updateTrip(ti, 'destination', e.target.value)} />
-                                    <TextField select label="Krajina" size="small" sx={{ flex: '0 0 160px' }}
-                                        value={trip.country ?? 'SK'}
-                                        onChange={e => updateTrip(ti, 'country', e.target.value)}>
-                                        {allCountries.map(c => (
-                                            <MenuItem key={c.code} value={c.code}>
-                                                {c.code !== 'SK' && c.currency !== 'EUR'
-                                                    ? `${c.label} (${c.currency})`
-                                                    : c.label}
-                                            </MenuItem>
-                                        ))}
-                                    </TextField>
-                                    <TextField label="Účel cesty" size="small"
-                                        sx={{ flex: '1 1 160px' }}
-                                        value={trip.purpose ?? ''}
-                                        onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
-                                </Stack>
-
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                    <TextField label="Miesto odchodu" size="small"
-                                        sx={{ flex: '1 1 140px' }}
-                                        value={trip.departureLocation ?? ''}
-                                        onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
-                                    <TextField label="Dátum odchodu" type="date" size="small" sx={{ flex: '0 0 145px' }}
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={trip.departureDate}
-                                        onChange={e => updateTrip(ti, 'departureDate', e.target.value)} />
-                                    <TextField label="Čas" type="time" size="small" sx={{ flex: '0 0 100px' }}
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={trip.departureTime ?? ''}
-                                        onChange={e => updateTrip(ti, 'departureTime', e.target.value)} />
-                                    <TextField label="Miesto návratu" size="small"
-                                        sx={{ flex: '1 1 140px' }}
-                                        value={trip.returnLocation ?? ''}
-                                        onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
-                                    <TextField label="Dátum návratu" type="date" size="small" sx={{ flex: '0 0 145px' }}
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={trip.returnDate ?? ''}
-                                        onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
-                                </Stack>
+                                {isMobile ? (
+                                    <Stack sx={{ gap: 1 }}>
+                                        <TextField label="Miesto rokovania" required size="small" fullWidth
+                                            value={trip.destination}
+                                            onChange={e => updateTrip(ti, 'destination', e.target.value)} />
+                                        <Stack direction="row" sx={{ gap: 1 }}>
+                                            <TextField select label="Krajina" size="small" sx={{ flex: '0 0 150px' }}
+                                                value={trip.country ?? 'SK'}
+                                                onChange={e => updateTrip(ti, 'country', e.target.value)}>
+                                                {allCountries.map(c => (
+                                                    <MenuItem key={c.code} value={c.code}>
+                                                        {c.code !== 'SK' && c.currency !== 'EUR'
+                                                            ? `${c.label} (${c.currency})`
+                                                            : c.label}
+                                                    </MenuItem>
+                                                ))}
+                                            </TextField>
+                                            <TextField label="Účel cesty" size="small" sx={{ flex: 1 }}
+                                                value={trip.purpose ?? ''}
+                                                onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
+                                        </Stack>
+                                        <TextField label="Miesto odchodu" size="small" fullWidth
+                                            value={trip.departureLocation ?? ''}
+                                            onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
+                                        <Stack direction="row" sx={{ gap: 1 }}>
+                                            <TextField label="Dátum odchodu" type="date" size="small" sx={{ flex: 1 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={trip.departureDate}
+                                                onChange={e => updateTrip(ti, 'departureDate', e.target.value)} />
+                                            <TextField label="Čas" type="time" size="small" sx={{ width: 105 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={trip.departureTime ?? ''}
+                                                onChange={e => updateTrip(ti, 'departureTime', e.target.value)} />
+                                        </Stack>
+                                        <TextField label="Miesto návratu" size="small" fullWidth
+                                            value={trip.returnLocation ?? ''}
+                                            onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
+                                        <TextField label="Dátum návratu" type="date" size="small" fullWidth
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={trip.returnDate ?? ''}
+                                            onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
+                                    </Stack>
+                                ) : (
+                                    <>
+                                        <Stack direction="row" sx={{ gap: 1.5 }}>
+                                            <TextField label="Miesto rokovania" required size="small" fullWidth
+                                                value={trip.destination}
+                                                onChange={e => updateTrip(ti, 'destination', e.target.value)} />
+                                            <TextField select label="Krajina" size="small" sx={{ minWidth: 160 }}
+                                                value={trip.country ?? 'SK'}
+                                                onChange={e => updateTrip(ti, 'country', e.target.value)}>
+                                                {allCountries.map(c => (
+                                                    <MenuItem key={c.code} value={c.code}>
+                                                        {c.code !== 'SK' && c.currency !== 'EUR'
+                                                            ? `${c.label} (${c.currency})`
+                                                            : c.label}
+                                                    </MenuItem>
+                                                ))}
+                                            </TextField>
+                                            <TextField label="Účel cesty" size="small" fullWidth
+                                                value={trip.purpose ?? ''}
+                                                onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
+                                        </Stack>
+                                        <Stack direction="row" sx={{ gap: 1.5 }}>
+                                            <TextField label="Miesto odchodu" size="small" fullWidth
+                                                value={trip.departureLocation ?? ''}
+                                                onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
+                                            <TextField label="Dátum odchodu" type="date" size="small" sx={{ minWidth: 145 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={trip.departureDate}
+                                                onChange={e => updateTrip(ti, 'departureDate', e.target.value)} />
+                                            <TextField label="Čas" type="time" size="small" sx={{ width: 100 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={trip.departureTime ?? ''}
+                                                onChange={e => updateTrip(ti, 'departureTime', e.target.value)} />
+                                            <TextField label="Miesto návratu" size="small" fullWidth
+                                                value={trip.returnLocation ?? ''}
+                                                onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
+                                            <TextField label="Dátum návratu" type="date" size="small" sx={{ minWidth: 145 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={trip.returnDate ?? ''}
+                                                onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
+                                        </Stack>
+                                    </>
+                                )}
 
                                 {trip.segments.length === 0 && trip.destination && (
                                     <Button size="small" variant="outlined" onClick={() => generateTripSegments(ti)}
