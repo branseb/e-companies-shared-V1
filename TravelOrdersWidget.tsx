@@ -244,17 +244,34 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
         const daySegs = segments.filter(s => s.date === date)
         const entry = getRatesForDate(ratesHistory, date)
 
-        // Spočítame hodiny pre každú krajinu v daný deň (všetky segmenty, nie len súvislé bloky)
-        const byCountry: Record<string, { hours: number; currency: string }> = {}
+        // 1. Rozdeliť na súvislé bloky rovnakej krajiny (SK→CZ→SK = 3 bloky)
+        const blocks: { country: string; segs: TripSegment[] }[] = []
         for (const seg of daySegs) {
             const c = seg.country ?? 'SK'
-            const h = segHours(seg.fromTime, seg.toTime)
-            if (h <= 0) continue
-            if (!byCountry[c]) byCountry[c] = { hours: 0, currency: seg.currency || 'EUR' }
-            byCountry[c].hours += h
+            const last = blocks[blocks.length - 1]
+            if (!last || last.country !== c) blocks.push({ country: c, segs: [seg] })
+            else last.segs.push(seg)
         }
 
-        // Aplikujeme prah stravného na celkové hodiny krajiny v daný deň
+        // 2. Pre každý blok: span = min(fromTime) → max(toTime)
+        //    (napr. [05:00-06:00, 18:00-19:00] v CZ = 14h, nie 2h)
+        //    Spany blokov tej istej krajiny sčítame → potom aplikujeme prah
+        const byCountry: Record<string, { hours: number; currency: string }> = {}
+        for (const block of blocks) {
+            const froms = block.segs.map(s => s.fromTime).filter(Boolean)
+            const tos   = block.segs.map(s => s.toTime).filter(Boolean)
+            if (!froms.length || !tos.length) continue
+            const blockHours = segHours(
+                froms.reduce((a, b) => a < b ? a : b),
+                tos.reduce((a, b) => a > b ? a : b),
+            )
+            if (blockHours <= 0) continue
+            const currency = block.segs.find(s => s.currency)?.currency ?? 'EUR'
+            if (!byCountry[block.country]) byCountry[block.country] = { hours: 0, currency }
+            byCountry[block.country].hours += blockHours
+        }
+
+        // 3. Aplikujeme prah na celkové hodiny krajiny (súčet spanов blokov)
         for (const [country, data] of Object.entries(byCountry)) {
             const hh = Math.floor(data.hours)
             const mm = Math.round((data.hours % 1) * 60)
