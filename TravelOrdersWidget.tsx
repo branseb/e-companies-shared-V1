@@ -1269,10 +1269,14 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                         onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
                                 </Stack>
 
-                                {trip.segments.length === 0 && trip.destination && (
-                                    <Button size="small" variant="outlined" onClick={() => generateTripSegments(ti)}
-                                        sx={{ alignSelf: 'flex-start' }}>
-                                        Vygenerovať základné úseky (tam + späť)
+                                {trip.destination && trip.departureDate && trip.returnDate && (
+                                    <Button size="small" variant="outlined"
+                                        sx={{ alignSelf: 'flex-start' }}
+                                        onClick={() => {
+                                            if (trip.segments.length > 0 && !window.confirm('Prepočítať úseky? Existujúce úseky budú nahradené.')) return
+                                            generateTripSegments(ti)
+                                        }}>
+                                        {trip.segments.length === 0 ? 'Vygenerovať úseky (tam + pobyt + späť)' : 'Prepočítať úseky'}
                                     </Button>
                                 )}
                                 <SegmentEditor
