@@ -856,7 +856,7 @@ const RatesDialog = ({ history, onSave, onClose }: RatesDialogProps) => {
                                     value={active.amortizationRate ?? AMORTIZATION_RATE}
                                     onChange={e => updateActive({ amortizationRate: e.target.value ? Number(e.target.value) : AMORTIZATION_RATE })} />
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    zákon č. 283/2002 Z.z. — štandardná sadzba 0,313 EUR/km
+                                    zákon č. 283/2002 Z.z.
                                 </Typography>
                             </Stack>
 
