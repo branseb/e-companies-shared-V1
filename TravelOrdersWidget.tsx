@@ -233,30 +233,69 @@ const calcSegStravne = (fromTime: string, toTime: string, country: string, entry
     }
 }
 
-// Stravné sa počíta za celý deň v danej krajine (min fromTime → max toTime)
+// Stravné sa počíta za celý deň v danej krajine
 type DayStravneEntry = { date: string; country: string; currency: string; hours: number; stravne: number }
 
 export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneRates): DayStravneEntry[] => {
-    // Zoskupíme segmenty podľa (dátum, krajina)
-    const groups: Record<string, TripSegment[]> = {}
-    for (const seg of segments) {
-        const key = `${seg.date}__${seg.country ?? 'SK'}`
-        ;(groups[key] = groups[key] ?? []).push(seg)
-    }
+    const dates = [...new Set(segments.map(s => s.date))]
     const result: DayStravneEntry[] = []
-    for (const [key, segs] of Object.entries(groups)) {
-        const [date, country] = key.split('__')
-        const froms = segs.map(s => s.fromTime).filter(Boolean)
-        const tos   = segs.map(s => s.toTime).filter(Boolean)
-        if (!froms.length || !tos.length) continue
-        const minFrom = froms.reduce((a, b) => a < b ? a : b)
-        const maxTo   = tos.reduce((a, b) => a > b ? a : b)
-        const hours   = segHours(minFrom, maxTo)
-        const entry   = getRatesForDate(ratesHistory, date)
-        const stravne = calcSegStravne(minFrom, maxTo, country, entry)
-        if (!stravne) continue
-        const currency = segs.find(s => s.currency)?.currency ?? 'EUR'
-        result.push({ date, country, currency, hours: +hours.toFixed(1), stravne })
+
+    for (const date of dates) {
+        const daySegs = segments.filter(s => s.date === date)
+        const countries = [...new Set(daySegs.map(s => s.country ?? 'SK'))]
+        const multiCountry = countries.length > 1
+
+        for (const country of countries) {
+            const cSegs = daySegs.filter(s => (s.country ?? 'SK') === country)
+            const entry = getRatesForDate(ratesHistory, date)
+            let totalHours: number
+
+            if (!multiCountry) {
+                // Jediná krajina — min→max (zahŕňa pobyt na mieste rokovania)
+                const froms = cSegs.map(s => s.fromTime).filter(Boolean)
+                const tos   = cSegs.map(s => s.toTime).filter(Boolean)
+                if (!froms.length || !tos.length) continue
+                totalHours = segHours(
+                    froms.reduce((a, b) => a < b ? a : b),
+                    tos.reduce((a, b) => a > b ? a : b),
+                )
+            } else {
+                // Viaceré krajiny — skontrolujeme či sú segmenty danej krajiny prerušené inou krajinou
+                const firstIdx = daySegs.indexOf(cSegs[0])
+                const lastIdx  = daySegs.indexOf(cSegs[cSegs.length - 1])
+                const between  = daySegs.slice(firstIdx, lastIdx + 1)
+                const interrupted = between.some(s => (s.country ?? 'SK') !== country)
+
+                if (!interrupted) {
+                    // Segmenty sú po sebe idúce (napr. všetky AT) — min→max zahŕňa pobyt v destináci
+                    const froms = cSegs.map(s => s.fromTime).filter(Boolean)
+                    const tos   = cSegs.map(s => s.toTime).filter(Boolean)
+                    if (!froms.length || !tos.length) continue
+                    totalHours = segHours(
+                        froms.reduce((a, b) => a < b ? a : b),
+                        tos.reduce((a, b) => a > b ? a : b),
+                    )
+                } else {
+                    // Prerušené inou krajinou (napr. SK ráno + SK večer po návrate z AT)
+                    // → sčítame len skutočné časy segmentov, nie medzery
+                    totalHours = cSegs.reduce((sum, s) => {
+                        if (!s.fromTime || !s.toTime) return sum
+                        return sum + segHours(s.fromTime, s.toTime)
+                    }, 0)
+                }
+            }
+
+            const stravne = calcSegStravne(
+                // Simulujeme čas pomocou 00:00 + totalHours pre výpočet sadzby
+                '00:00',
+                `${String(Math.floor(totalHours)).padStart(2, '0')}:${String(Math.round((totalHours % 1) * 60)).padStart(2, '0')}`,
+                country,
+                entry,
+            )
+            if (!stravne) continue
+            const currency = cSegs.find(s => s.currency)?.currency ?? 'EUR'
+            result.push({ date, country, currency, hours: +totalHours.toFixed(1), stravne })
+        }
     }
     return result.sort((a, b) => a.date.localeCompare(b.date))
 }
