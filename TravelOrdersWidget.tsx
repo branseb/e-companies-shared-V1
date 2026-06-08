@@ -81,6 +81,7 @@ export type EmployeeRecord = {
     id: number
     name: string
     address?: string | null
+    defaultLocation?: string | null
 }
 
 export type TravelOrdersWidgetProps = {
@@ -94,8 +95,8 @@ export type TravelOrdersWidgetProps = {
     ratesHistory?: StravneRates | null
     onRatesChange?: (history: StravneRates) => void
     employees?: EmployeeRecord[]
-    onEmployeeCreate?: (data: { name: string; address?: string }) => Promise<void>
-    onEmployeeUpdate?: (id: number, data: { name: string; address?: string }) => Promise<void>
+    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
+    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
     onEmployeeDelete?: (id: number) => Promise<void>
 }
 
@@ -616,8 +617,8 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
 
 type EmpDialogProps = {
     employees: EmployeeRecord[]
-    onCreate: (data: { name: string; address?: string }) => Promise<void>
-    onUpdate: (id: number, data: { name: string; address?: string }) => Promise<void>
+    onCreate: (data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
+    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string }) => Promise<void>
     onDelete: (id: number) => Promise<void>
     onClose: () => void
 }
@@ -625,19 +626,24 @@ type EmpDialogProps = {
 const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
     const [adding, setAdding] = useState(false)
-    const [form, setForm] = useState({ name: '', address: '' })
+    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '' })
     const [saving, setSaving] = useState(false)
 
-    const openAdd = () => { setEditing(null); setForm({ name: '', address: '' }); setAdding(true) }
-    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '' }); setAdding(true) }
+    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '' }); setAdding(true) }
+    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '' }); setAdding(true) }
     const cancel = () => { setAdding(false); setEditing(null) }
 
     const handleSave = async () => {
         if (!form.name.trim()) return
         setSaving(true)
         try {
-            if (editing) await onUpdate(editing.id, { name: form.name.trim(), address: form.address.trim() || undefined })
-            else         await onCreate({ name: form.name.trim(), address: form.address.trim() || undefined })
+            const data = {
+                name: form.name.trim(),
+                address: form.address.trim() || undefined,
+                defaultLocation: form.defaultLocation.trim() || undefined,
+            }
+            if (editing) await onUpdate(editing.id, data)
+            else         await onCreate(data)
             cancel()
         } finally { setSaving(false) }
     }
@@ -654,8 +660,10 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                         <Stack key={emp.id} direction="row" sx={{ alignItems: 'center', gap: 1 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 500 }}>{emp.name}</Typography>
-                                {emp.address && (
-                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>{emp.address}</Typography>
+                                {(emp.address || emp.defaultLocation) && (
+                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                        {[emp.address, emp.defaultLocation ? `📍 ${emp.defaultLocation}` : ''].filter(Boolean).join(' · ')}
+                                    </Typography>
                                 )}
                             </Box>
                             <IconButton size="small" onClick={() => openEdit(emp)}><Edit fontSize="small" /></IconButton>
@@ -672,6 +680,10 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                             <TextField label="Bydlisko" size="small" fullWidth
                                 value={form.address}
                                 onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+                            <TextField label="Predvolené miesto odchodu/príchodu" size="small" fullWidth
+                                placeholder="napr. Košice"
+                                value={form.defaultLocation}
+                                onChange={e => setForm(f => ({ ...f, defaultLocation: e.target.value }))} />
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <Button size="small" onClick={cancel} disabled={saving}>Zrušiť</Button>
                                 <Button size="small" variant="contained" onClick={handleSave}
@@ -1202,6 +1214,15 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                             if (val && typeof val !== 'string') {
                                 set('employee', val.name)
                                 set('employeeAddress', val.address ?? '')
+                                if (val.defaultLocation) {
+                                    const loc = val.defaultLocation
+                                    set('departureLocation', loc)
+                                    set('trips', (form.trips ?? []).map(t => ({
+                                        ...t,
+                                        departureLocation: t.departureLocation || loc,
+                                        returnLocation:    t.returnLocation    || loc,
+                                    })))
+                                }
                             }
                         }}
                         renderInput={params => (
