@@ -363,8 +363,7 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
     const stravneByCurrency: Record<string, number> = {}
 
     if (d.trips?.length) {
-        // Stravné sa ráta cez calcDailyStravne — po dňoch, po súvislých blokoch krajín
-        const allSegments = d.trips.flatMap(t => t.segments)
+        const allSegments = d.trips.flatMap(t => (t.segments ?? []) as TripSegment[])
         for (const ds of calcDailyStravne(allSegments, rates)) {
             const cur = ds.currency || 'EUR'
             if (d.useExchangeRates && cur !== 'EUR') {
@@ -376,7 +375,10 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
                 stravneByCurrency[cur] = (stravneByCurrency[cur] ?? 0) + ds.stravne
             }
         }
-    } else {
+    }
+
+    // Ak segmenty neobsahujú časy (alebo trips je prázdne), fallback na manuálnu sumu / jednoduchý výpočet
+    if (Object.keys(stravneByCurrency).length === 0) {
         const fallback = d.stravneAmount ?? (tripHours !== null ? calcStravneFallback(tripHours) : 0)
         if (fallback > 0) stravneByCurrency['EUR'] = fallback
     }
