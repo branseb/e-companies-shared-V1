@@ -774,11 +774,12 @@ const RatesDialog = ({ history, onSave, onClose }: RatesDialogProps) => {
 
     return (
         <Dialog open onClose={onClose} maxWidth="md" fullWidth>
-            <DialogTitle>Sadzby stravného — história</DialogTitle>
+            <DialogTitle>Sadzby stravného</DialogTitle>
             <DialogContent>
-                <Stack sx={{ gap: 2, mt: 1 }}>
-                    {/* Výber záznamu */}
-                    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Stack sx={{ gap: 0, mt: 1 }}>
+
+                    {/* ── Výber obdobia ── */}
+                    <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 2 }}>
                         {sorted.map((e) => (
                             <Chip key={e.validFrom} size="small"
                                 label={`od ${fmtDate(e.validFrom)}`}
@@ -794,49 +795,78 @@ const RatesDialog = ({ history, onSave, onClose }: RatesDialogProps) => {
 
                     {active && (
                         <>
-                            <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center' }}>
+                            {/* ── Platné od ── */}
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Platnosť
+                                </Typography>
+                            </Divider>
+                            <Box sx={{ px: 0.5, pb: 2 }}>
                                 <TextField label="Platné od" type="date" size="small" sx={{ width: 160 }}
                                     slotProps={{ inputLabel: { shrink: true } }}
                                     value={active.validFrom}
                                     onChange={e => updateActive({ validFrom: e.target.value })} />
+                            </Box>
+
+                            {/* ── Tuzemsko ── */}
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Tuzemsko (SR) — EUR
+                                </Typography>
+                            </Divider>
+                            <Stack direction="row" sx={{ gap: 1.5, px: 0.5, pb: 3 }}>
+                                <TextField label="5–12 hod." type="number" size="small" fullWidth
+                                    value={active.sk_5}
+                                    onChange={e => setSk('sk_5', e.target.value)} />
+                                <TextField label="12–18 hod." type="number" size="small" fullWidth
+                                    value={active.sk_12}
+                                    onChange={e => setSk('sk_12', e.target.value)} />
+                                <TextField label="18+ hod." type="number" size="small" fullWidth
+                                    value={active.sk_18}
+                                    onChange={e => setSk('sk_18', e.target.value)} />
                             </Stack>
 
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>Tuzemsko (SR) — EUR</Typography>
-                                <Stack direction="row" sx={{ gap: 1.5 }}>
-                                    <TextField label="5–12 hod." type="number" size="small" fullWidth
-                                        value={active.sk_5}
-                                        onChange={e => setSk('sk_5', e.target.value)} />
-                                    <TextField label="12–18 hod." type="number" size="small" fullWidth
-                                        value={active.sk_12}
-                                        onChange={e => setSk('sk_12', e.target.value)} />
-                                    <TextField label="18+ hod." type="number" size="small" fullWidth
-                                        value={active.sk_18}
-                                        onChange={e => setSk('sk_18', e.target.value)} />
-                                    <TextField label="Amortizácia (EUR/km)" type="number" size="small" fullWidth
-                                        slotProps={{ htmlInput: { step: 0.001 } }}
-                                        value={active.amortizationRate ?? AMORTIZATION_RATE}
-                                        onChange={e => updateActive({ amortizationRate: e.target.value ? Number(e.target.value) : AMORTIZATION_RATE })} />
-                                </Stack>
-                            </Box>
+                            {/* ── Krátenie ── */}
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Krátenie za bezplatné stravovanie
+                                </Typography>
+                            </Divider>
+                            <Stack direction="row" sx={{ gap: 1.5, px: 0.5, pb: 3 }}>
+                                <TextField label="Raňajky %" type="number" size="small" fullWidth
+                                    value={+(active.meals.ranajky * 100).toFixed(1)}
+                                    onChange={e => setMeal('ranajky', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
+                                <TextField label="Obed %" type="number" size="small" fullWidth
+                                    value={+(active.meals.obed * 100).toFixed(1)}
+                                    onChange={e => setMeal('obed', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
+                                <TextField label="Večera %" type="number" size="small" fullWidth
+                                    value={+(active.meals.vecera * 100).toFixed(1)}
+                                    onChange={e => setMeal('vecera', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
+                            </Stack>
 
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>Krátenie za bezplatné stravovanie</Typography>
-                                <Stack direction="row" sx={{ gap: 1.5 }}>
-                                    <TextField label="Raňajky %" type="number" size="small" fullWidth
-                                        value={+(active.meals.ranajky * 100).toFixed(1)}
-                                        onChange={e => setMeal('ranajky', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
-                                    <TextField label="Obed %" type="number" size="small" fullWidth
-                                        value={+(active.meals.obed * 100).toFixed(1)}
-                                        onChange={e => setMeal('obed', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
-                                    <TextField label="Večera %" type="number" size="small" fullWidth
-                                        value={+(active.meals.vecera * 100).toFixed(1)}
-                                        onChange={e => setMeal('vecera', e.target.value ? String(Number(e.target.value) / 100) : '0')} />
-                                </Stack>
-                            </Box>
+                            {/* ── Amortizácia ── */}
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Amortizácia vozidla
+                                </Typography>
+                            </Divider>
+                            <Stack direction="row" sx={{ gap: 1.5, px: 0.5, pb: 3, alignItems: 'center' }}>
+                                <TextField label="Sadzba (EUR/km)" type="number" size="small" sx={{ width: 180 }}
+                                    slotProps={{ htmlInput: { step: 0.001 } }}
+                                    value={active.amortizationRate ?? AMORTIZATION_RATE}
+                                    onChange={e => updateActive({ amortizationRate: e.target.value ? Number(e.target.value) : AMORTIZATION_RATE })} />
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                    zákon č. 283/2002 Z.z. — štandardná sadzba 0,313 EUR/km
+                                </Typography>
+                            </Stack>
 
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>Zahraničie</Typography>
+                            {/* ── Zahraničie ── */}
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Zahraničie
+                                </Typography>
+                            </Divider>
+                            <Box sx={{ px: 0.5 }}>
                                 <Table size="small">
                                     <TableHead>
                                         <TableRow>
@@ -887,7 +917,6 @@ const RatesDialog = ({ history, onSave, onClose }: RatesDialogProps) => {
                                         })}
                                     </TableBody>
                                 </Table>
-                                {/* Pridať vlastnú krajinu */}
                                 <Stack direction="row" sx={{ gap: 1, mt: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
                                     <TextField label="Kód" size="small" sx={{ width: 72 }}
                                         placeholder="FR"
@@ -1530,8 +1559,8 @@ export const TravelOrdersWidget = ({
                         </Button>
                     )}
                     {onRatesChange && (
-                        <Button size="small" variant="outlined" onClick={() => setRatesOpen(true)}>
-                            Sadzby stravného
+                        <Button size="small" onClick={() => setRatesOpen(true)}>
+                            Sadzby
                         </Button>
                     )}
                     {!readOnly && (
