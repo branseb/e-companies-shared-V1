@@ -1,10 +1,10 @@
 import { jsPDF } from 'jspdf'
 import { robotoBase64 } from './robotoFont'
 import { roboto700Base64 } from './robotoBoldFont'
-import { calcDailyStravne, DEFAULT_STRAVNE_RATES } from './TravelOrdersWidget'
+import { calcDailyStravne, DEFAULT_STRAVNE_RATES, getRatesForDate } from './TravelOrdersWidget'
 import type { StravneRates, TripSegment } from './TravelOrdersWidget'
 
-const AMORTIZATION_RATE = 0.313
+const DEFAULT_AMORTIZATION_RATE = 0.313
 
 const TRANSPORT_OPTIONS = [
     { value: 'car',         label: 'Vlastné auto (AUV)', short: 'AUV' },
@@ -86,8 +86,8 @@ const calcStravneFallback = (hours: number): number => {
 const calcFuelCost = (km: number, consumption: number, pricePerLiter: number): number =>
     (km / 100) * consumption * pricePerLiter
 
-const calcAmortization = (km: number, transportType: string | null | undefined): number =>
-    transportType === 'car' ? km * AMORTIZATION_RATE : 0
+const calcAmortization = (km: number, transportType: string | null | undefined, amortizationRate?: number): number =>
+    transportType === 'car' ? km * (amortizationRate ?? DEFAULT_AMORTIZATION_RATE) : 0
 
 const fmtD = (iso: string | null | undefined) => {
     if (!iso) return ''
@@ -344,6 +344,7 @@ interface Financials {
     stravneByCurrency: Record<string, number>
     fuelCost: number
     amortization: number
+    amortizationRate: number
     totalExpenses: number
     balance: number
     balanceByCurrency: Record<string, number>
@@ -390,9 +391,10 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
         : 0
     const km = carKmFromSegs > 0 ? carKmFromSegs : (d.distanceKm ?? 0)
 
+    const amortizationRate = getRatesForDate(rates, d.departureDate).amortizationRate ?? DEFAULT_AMORTIZATION_RATE
     const fuelCost     = (d.applyFuelCost !== false) && km && d.fuelConsumption && d.fuelPricePerLiter
         ? calcFuelCost(km, d.fuelConsumption, d.fuelPricePerLiter) : 0
-    const amortization = (d.applyAmortization !== false) ? calcAmortization(km, 'car') : 0
+    const amortization = (d.applyAmortization !== false) ? calcAmortization(km, 'car', amortizationRate) : 0
     const totalExpenses = stravne + fuelCost + amortization + (d.actualExpenses ?? 0)
 
     const advanceByCurrency: Record<string, number> = {}
@@ -420,7 +422,7 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
     const kmOut = Math.round(km / 2)
     const kmRet = km - kmOut
 
-    return { tripHours, stravne, stravneByCurrency, fuelCost, amortization, totalExpenses, balance, balanceByCurrency, advanceByCurrency, km, kmOut, kmRet }
+    return { tripHours, stravne, stravneByCurrency, fuelCost, amortization, amortizationRate, totalExpenses, balance, balanceByCurrency, advanceByCurrency, km, kmOut, kmRet }
 }
 
 // ── Strana 2 ─────────────────────────────────────────────────────────────────
@@ -653,7 +655,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     normal(doc, 5.5); doc.text('Spolu km', L + 55, y + 2.5, { align: 'center' })
     bold(doc, 8);   doc.text(String(f.km), L + 60, aY, { align: 'right' })
     normal(doc, 7); doc.text('km  ×', L + 62, aY)
-    bold(doc, 8);   doc.text(String(AMORTIZATION_RATE).replace('.', ','), L + 83, aY)
+    bold(doc, 8);   doc.text(String(f.amortizationRate).replace('.', ','), L + 83, aY)
     normal(doc, 7); doc.text('EUR/km  =', L + 93, aY)
     bold(doc, 8);   doc.text(fmtSk(f.amortization), R - 2, aY, { align: 'right' })
     y += 10

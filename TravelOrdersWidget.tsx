@@ -165,6 +165,7 @@ export type StravneRatesEntry = {
     sk_18: number      // 18+ hod. tuzemsko
     meals: StravneMeals
     foreign: Record<string, ForeignStravneRate>
+    amortizationRate?: number  // EUR/km (default 0.313 — zákon č. 283/2002 Z.z.)
 }
 
 // História sadzieb (pole záznakov)
@@ -176,6 +177,7 @@ const DEFAULT_ENTRY: StravneRatesEntry = {
     sk_12: 13.80,
     sk_18: 20.90,
     meals: { ranajky: 0.25, obed: 0.40, vecera: 0.35 },
+    amortizationRate: 0.313,
     foreign: Object.fromEntries(
         COUNTRY_OPTIONS.filter(c => c.code !== 'SK').map(c => [
             c.code,
@@ -307,8 +309,8 @@ export const calcStravne = (hours: number): number => {
 export const calcFuelCost = (km: number, consumption: number, pricePerLiter: number): number =>
     (km / 100) * consumption * pricePerLiter
 
-export const calcAmortization = (km: number, transportType: string | null | undefined): number =>
-    transportType === 'car' ? km * AMORTIZATION_RATE : 0
+export const calcAmortization = (km: number, transportType: string | null | undefined, amortizationRate?: number): number =>
+    transportType === 'car' ? km * (amortizationRate ?? AMORTIZATION_RATE) : 0
 
 // ── Pomocné funkcie ───────────────────────────────────────────────────────────
 
@@ -811,6 +813,10 @@ const RatesDialog = ({ history, onSave, onClose }: RatesDialogProps) => {
                                     <TextField label="18+ hod." type="number" size="small" fullWidth
                                         value={active.sk_18}
                                         onChange={e => setSk('sk_18', e.target.value)} />
+                                    <TextField label="Amortizácia (EUR/km)" type="number" size="small" fullWidth
+                                        slotProps={{ htmlInput: { step: 0.001 } }}
+                                        value={active.amortizationRate ?? AMORTIZATION_RATE}
+                                        onChange={e => updateActive({ amortizationRate: e.target.value ? Number(e.target.value) : AMORTIZATION_RATE })} />
                                 </Stack>
                             </Box>
 
@@ -955,8 +961,9 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
 
     const amortization = useMemo(() => {
         if (form.applyAmortization === false || !effectiveCarKm) return null
-        return calcAmortization(effectiveCarKm, 'car')
-    }, [effectiveCarKm, form.applyAmortization])
+        const aRate = getRatesForDate(ratesHistory, form.departureDate).amortizationRate
+        return calcAmortization(effectiveCarKm, 'car', aRate)
+    }, [effectiveCarKm, form.applyAmortization, form.departureDate, ratesHistory])
 
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
 
@@ -1564,7 +1571,7 @@ export const TravelOrdersWidget = ({
                                 })()
                                 const fuelCost    = rowCarKm && r.fuelConsumption && r.fuelPricePerLiter
                                     ? calcFuelCost(rowCarKm, r.fuelConsumption, r.fuelPricePerLiter) : 0
-                                const amort       = rowCarKm ? calcAmortization(rowCarKm, 'car') : 0
+                                const amort       = rowCarKm ? calcAmortization(rowCarKm, 'car', getRatesForDate(effectiveRates, r.departureDate).amortizationRate) : 0
                                 const depStr      = [r.departureDate ? fmtDate(r.departureDate) : null, r.departureTime].filter(Boolean).join(' ')
                                 const retDate     = r.trips?.length ? r.trips[r.trips.length - 1].returnDate : r.returnDate
                                 const retStr      = retDate ? fmtDate(retDate) : '—'
