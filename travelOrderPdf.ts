@@ -507,18 +507,42 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     let hasStars = false
 
     if (hasTrips) {
+        const allSegs = d.trips!.flatMap(t => (t.segments ?? []) as TripSegment[])
+        const rates = d.ratesHistory ?? DEFAULT_STRAVNE_RATES
+
+        // Stravné per (dátum, krajina) z calcDailyStravne
+        const dailyResults = calcDailyStravne(allSegs, rates)
+        const stravneMap = new Map<string, { stravne: number; currency: string }>()
+        for (const ds of dailyResults) {
+            if (ds.stravne > 0) stravneMap.set(`${ds.date}|${ds.country}`, { stravne: ds.stravne, currency: ds.currency })
+        }
+
+        // Posledný index segmentu pre každú (dátum, krajina) kombináciu
+        const lastIdx = new Map<string, number>()
+        allSegs.forEach((s, i) => lastIdx.set(`${s.date}|${s.country ?? 'SK'}`, i))
+
+        let si = 0
         for (const trip of d.trips!) {
-            for (const seg of trip.segments) {
-                // Stravné sa nezobrazuje per-segment — ráta sa denný súčet v sekcii Spolu
+            for (const seg of (trip.segments ?? []) as TripSegment[]) {
+                const key = `${seg.date}|${seg.country ?? 'SK'}`
+                const isLast = lastIdx.get(key) === si
+                const ds = isLast ? stravneMap.get(key) : undefined
+                const stravneStr = ds
+                    ? (ds.currency === 'EUR' ? fmtSk(ds.stravne) : `${fmtSk(ds.stravne)} ${ds.currency}`)
+                    : undefined
+
                 dataPairs.push({
                     od: {
                         date: fmtD(seg.date), dir: 'Odchod',
                         place: seg.fromPlace, time: seg.fromTime,
                         trans: transportShort(seg.transport),
                         km: seg.km != null ? String(seg.km) : '',
+                        stravne: stravneStr,
+                        spolu:   stravneStr,
                     },
                     pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: seg.toTime, trans: '', km: '' },
                 })
+                si++
             }
         }
     } else {
