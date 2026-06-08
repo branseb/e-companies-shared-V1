@@ -244,41 +244,27 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
         const daySegs = segments.filter(s => s.date === date)
         const entry = getRatesForDate(ratesHistory, date)
 
-        // Rozdelíme segmenty na súvislé bloky rovnakej krajiny (SK→CZ→SK = 3 bloky)
-        const blocks: { country: string; segs: TripSegment[] }[] = []
+        // Spočítame hodiny pre každú krajinu v daný deň (všetky segmenty, nie len súvislé bloky)
+        const byCountry: Record<string, { hours: number; currency: string }> = {}
         for (const seg of daySegs) {
             const c = seg.country ?? 'SK'
-            const last = blocks[blocks.length - 1]
-            if (!last || last.country !== c) blocks.push({ country: c, segs: [seg] })
-            else last.segs.push(seg)
+            const h = segHours(seg.fromTime, seg.toTime)
+            if (h <= 0) continue
+            if (!byCountry[c]) byCountry[c] = { hours: 0, currency: seg.currency || 'EUR' }
+            byCountry[c].hours += h
         }
 
-        // Pre každý blok: min→max časov (zahŕňa pobyt na mieste) → stravné
-        // Stravné z viacerých blokov tej istej krajiny sa sčítava
-        const byCountry: Record<string, { stravne: number; currency: string; hours: number }> = {}
-        for (const block of blocks) {
-            const froms = block.segs.map(s => s.fromTime).filter(Boolean)
-            const tos   = block.segs.map(s => s.toTime).filter(Boolean)
-            if (!froms.length || !tos.length) continue
-            const totalHours = segHours(
-                froms.reduce((a, b) => a < b ? a : b),
-                tos.reduce((a, b) => a > b ? a : b),
-            )
+        // Aplikujeme prah stravného na celkové hodiny krajiny v daný deň
+        for (const [country, data] of Object.entries(byCountry)) {
+            const hh = Math.floor(data.hours)
+            const mm = Math.round((data.hours % 1) * 60)
             const stravne = calcSegStravne(
                 '00:00',
-                `${String(Math.floor(totalHours)).padStart(2, '0')}:${String(Math.round((totalHours % 1) * 60)).padStart(2, '0')}`,
-                block.country,
-                entry,
+                `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`,
+                country, entry,
             )
             if (!stravne) continue
-            const currency = block.segs.find(s => s.currency)?.currency ?? 'EUR'
-            if (!byCountry[block.country]) byCountry[block.country] = { stravne: 0, currency, hours: 0 }
-            byCountry[block.country].stravne += stravne
-            byCountry[block.country].hours   += totalHours
-        }
-
-        for (const [country, data] of Object.entries(byCountry)) {
-            result.push({ date, country, currency: data.currency, hours: +data.hours.toFixed(1), stravne: data.stravne })
+            result.push({ date, country, currency: data.currency, hours: +data.hours.toFixed(1), stravne })
         }
     }
     return result.sort((a, b) => a.date.localeCompare(b.date))
