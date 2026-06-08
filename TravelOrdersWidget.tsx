@@ -3,7 +3,6 @@ import {
     Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
     DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem, Paper,
     Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
-    useMediaQuery,
 } from '@mui/material'
 import { Add, ArrowDownward, ArrowUpward, Delete, Edit, PictureAsPdf, Receipt } from '@mui/icons-material'
 
@@ -364,7 +363,6 @@ type SegEditorProps = {
 }
 
 const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHistory, allCountries, onChange }: SegEditorProps) => {
-    const isMobile = useMediaQuery('(max-width:600px)')
     const [expandedExp, setExpandedExp] = useState<Set<number>>(new Set())
     const segRates = (date: string) => getRatesForDate(ratesHistory, date || tripDate)
     const segCtry = (seg: TripSegment) => seg.country ?? defaultCountry
@@ -454,167 +452,25 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
         </Box>
     )
 
-    if (isMobile) {
-        return (
-            <Stack sx={{ gap: 1 }}>
-                {segments.map((seg, i) => (
-                    <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
-                        <Stack sx={{ gap: 0.75 }}>
-                            {/* Riadok 1: dátum + doprava + akcie */}
-                            <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                                <TextField type="date" size="small" sx={{ flex: 1 }} label="Dátum"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.date}
-                                    onChange={e => update(i, 'date', e.target.value)} />
-                                <TextField select size="small" sx={{ width: 80 }} label="Doprava"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.transport}
-                                    onChange={e => update(i, 'transport', e.target.value)}>
-                                    {TRANSPORT_OPTIONS.map(o => (
-                                        <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
-                                    ))}
-                                </TextField>
-                                <Stack direction="row" sx={{ ml: 'auto' }}>
-                                    <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
-                                        <ArrowUpward sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                    <IconButton size="small" disabled={i === segments.length - 1} onClick={() => move(i, 1)}>
-                                        <ArrowDownward sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                    <Tooltip title={`Iné výdavky${seg.expenses?.length ? ` (${seg.expenses.length})` : ''}`}>
-                                        <IconButton size="small"
-                                            color={seg.expenses?.length ? 'primary' : 'default'}
-                                            onClick={() => toggleExp(i)}>
-                                            <Receipt sx={{ fontSize: 14 }} />
-                                        </IconButton>
-                                    </Tooltip>
-                                    <IconButton size="small" color="error" onClick={() => remove(i)}>
-                                        <Delete fontSize="small" />
-                                    </IconButton>
-                                </Stack>
-                            </Stack>
-                            {/* Riadok 2: odchod */}
-                            <Stack direction="row" sx={{ gap: 0.5 }}>
-                                <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.fromPlace}
-                                    onChange={e => update(i, 'fromPlace', e.target.value)} />
-                                <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.fromTime}
-                                    onChange={e => update(i, 'fromTime', e.target.value)} />
-                            </Stack>
-                            {/* Riadok 3: príchod */}
-                            <Stack direction="row" sx={{ gap: 0.5 }}>
-                                <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.toPlace}
-                                    onChange={e => update(i, 'toPlace', e.target.value)} />
-                                <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.toTime}
-                                    onChange={e => update(i, 'toTime', e.target.value)} />
-                            </Stack>
-                            {/* Riadok 4: financie */}
-                            <Stack direction="row" sx={{ gap: 0.5 }}>
-                                <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.km ?? ''}
-                                    onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
-                                <TextField type="number" size="small" sx={{ flex: 1 }} label="Stravné"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.stravne ?? ''}
-                                    onChange={e => update(i, 'stravne', e.target.value ? Number(e.target.value) : null)} />
-                                <TextField size="small" sx={{ width: 62 }} label="Mena"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.currency}
-                                    onChange={e => update(i, 'currency', e.target.value.toUpperCase())} />
-                                <TextField select size="small" sx={{ width: 72 }} label="Krajina"
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={seg.country ?? defaultCountry}
-                                    onChange={e => update(i, 'country', e.target.value)}>
-                                    {allCountries.map(c => (
-                                        <MenuItem key={c.code} value={c.code}>{c.code}</MenuItem>
-                                    ))}
-                                </TextField>
-                            </Stack>
-                        </Stack>
-                        {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
-                        <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconButton size="small" onClick={() => insertAfter(i)}
-                                sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>
-                                <Add sx={{ fontSize: 13 }} />
-                            </IconButton>
-                        </Box>
-                    </Paper>
-                ))}
-                <Button size="small" startIcon={<Add />} onClick={add} sx={{ mt: 0.5 }}>
-                    Pridať úsek
-                </Button>
-            </Stack>
-        )
-    }
-
     return (
-        <Box sx={{ overflowX: 'auto' }}>
-            <Stack sx={{ gap: 0, minWidth: 540 }}>
-                {segments.map((seg, i) => (
-                    <Box key={i}>
-                        <Box sx={{
-                            display: 'grid',
-                            gridTemplateColumns: '105px 1fr 86px 1fr 86px 86px 60px',
-                            gap: 0.5,
-                            px: 0.5, pt: 1.5, pb: 0.5,
-                            bgcolor: i % 2 === 1 ? 'action.hover' : undefined,
-                        }}>
-                            {/* Dátum — oba riadky */}
-                            <Box sx={{ gridRow: '1/3', gridColumn: 1, minWidth: 0 }}>
-                                <TextField type="date" size="small" fullWidth label="Dátum"
-                                    slotProps={{
-                                        inputLabel: { shrink: true },
-                                        input: { sx: { '& input': { minWidth: '0 !important' } } },
-                                    }}
-                                    value={seg.date}
-                                    onChange={e => update(i, 'date', e.target.value)} />
-                            </Box>
-
-                            {/* Riadok 1 — trasa */}
-                            <TextField size="small" label="Odchod z"
+        <Stack sx={{ gap: 1 }}>
+            {segments.map((seg, i) => (
+                <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
+                    <Stack sx={{ gap: 0.75 }}>
+                        <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+                            <TextField type="date" size="small" sx={{ flex: 1 }} label="Dátum"
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 1, gridColumn: 2 }}
-                                value={seg.fromPlace}
-                                onChange={e => update(i, 'fromPlace', e.target.value)} />
-                            <TextField type="time" size="small" label="Čas od"
+                                value={seg.date}
+                                onChange={e => update(i, 'date', e.target.value)} />
+                            <TextField select size="small" sx={{ width: 80 }} label="Doprava"
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 1, gridColumn: 3 }}
-                                value={seg.fromTime}
-                                onChange={e => update(i, 'fromTime', e.target.value)} />
-                            <TextField size="small" label="Príchod do"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 1, gridColumn: 4 }}
-                                value={seg.toPlace}
-                                onChange={e => update(i, 'toPlace', e.target.value)} />
-                            <TextField type="time" size="small" label="Čas do"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 1, gridColumn: 5 }}
-                                value={seg.toTime}
-                                onChange={e => update(i, 'toTime', e.target.value)} />
-                            <TextField select size="small" label="Doprava"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 1, gridColumn: 6 }}
                                 value={seg.transport}
                                 onChange={e => update(i, 'transport', e.target.value)}>
                                 {TRANSPORT_OPTIONS.map(o => (
                                     <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
                                 ))}
                             </TextField>
-
-                            {/* Akcie — oba riadky */}
-                            <Stack sx={{
-                                gridRow: '1/3', gridColumn: 7,
-                                flexDirection: 'row', flexWrap: 'wrap',
-                                alignContent: 'center', width: 60,
-                            }}>
+                            <Stack direction="row">
                                 <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
                                     <ArrowUpward sx={{ fontSize: 14 }} />
                                 </IconButton>
@@ -632,49 +488,63 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                     <Delete fontSize="small" />
                                 </IconButton>
                             </Stack>
-
-                            {/* Riadok 2 — financie */}
-                            <TextField type="number" size="small" label="km"
+                        </Stack>
+                        <Stack direction="row" sx={{ gap: 0.5 }}>
+                            <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 2, gridColumn: 2 }}
+                                value={seg.fromPlace}
+                                onChange={e => update(i, 'fromPlace', e.target.value)} />
+                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.fromTime}
+                                onChange={e => update(i, 'fromTime', e.target.value)} />
+                        </Stack>
+                        <Stack direction="row" sx={{ gap: 0.5 }}>
+                            <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.toPlace}
+                                onChange={e => update(i, 'toPlace', e.target.value)} />
+                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={seg.toTime}
+                                onChange={e => update(i, 'toTime', e.target.value)} />
+                        </Stack>
+                        <Stack direction="row" sx={{ gap: 0.5 }}>
+                            <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
+                                slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField type="number" size="small" label="Stravné"
+                            <TextField type="number" size="small" sx={{ flex: 1 }} label="Stravné"
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 2, gridColumn: 3 }}
                                 value={seg.stravne ?? ''}
                                 onChange={e => update(i, 'stravne', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField size="small" label="Mena"
+                            <TextField size="small" sx={{ width: 62 }} label="Mena"
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 2, gridColumn: 4 }}
                                 value={seg.currency}
                                 onChange={e => update(i, 'currency', e.target.value.toUpperCase())} />
-                            <TextField select size="small" label="Krajina"
+                            <TextField select size="small" sx={{ width: 72 }} label="Krajina"
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                sx={{ gridRow: 2, gridColumn: 5 }}
                                 value={seg.country ?? defaultCountry}
                                 onChange={e => update(i, 'country', e.target.value)}>
                                 {allCountries.map(c => (
                                     <MenuItem key={c.code} value={c.code}>{c.code}</MenuItem>
                                 ))}
                             </TextField>
-                        </Box>
-
-                        {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
-
-                        <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <IconButton size="small" onClick={() => insertAfter(i)}
-                                sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>
-                                <Add sx={{ fontSize: 13 }} />
-                            </IconButton>
-                        </Box>
+                        </Stack>
+                    </Stack>
+                    {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
+                    <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <IconButton size="small" onClick={() => insertAfter(i)}
+                            sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>
+                            <Add sx={{ fontSize: 13 }} />
+                        </IconButton>
                     </Box>
-                ))}
-            </Stack>
+                </Paper>
+            ))}
             <Button size="small" startIcon={<Add />} onClick={add} sx={{ mt: 0.5 }}>
                 Pridať úsek
             </Button>
-        </Box>
+        </Stack>
     )
 }
 
@@ -997,7 +867,6 @@ type DialogProps = {
 }
 
 const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose }: DialogProps) => {
-    const isMobile = useMediaQuery('(max-width:600px)')
     const [form, setForm] = useState<TravelOrderInput>(initial)
     const [saving, setSaving] = useState(false)
 
@@ -1207,7 +1076,16 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     }
 
     return (
-        <Dialog open onClose={onClose} maxWidth="xl" fullWidth fullScreen={isMobile}>
+        <Dialog open onClose={onClose} maxWidth="xl" fullWidth
+            sx={{
+                '& .MuiDialog-paper': {
+                    margin: { xs: 0, sm: 2 },
+                    width: { xs: '100%', sm: 'calc(100% - 32px)' },
+                    maxHeight: { xs: '100%', sm: 'calc(100% - 64px)' },
+                    height: { xs: '100dvh', sm: 'auto' },
+                    borderRadius: { xs: 0, sm: 1 },
+                },
+            }}>
             <DialogTitle>{isNew ? 'Nový cestovný príkaz' : 'Upraviť cestovný príkaz'}</DialogTitle>
             <DialogContent>
                 <Stack sx={{ gap: 1.5, mt: 1 }}>
