@@ -3,6 +3,7 @@ import {
     Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
     DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem, Paper,
     Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography,
+    useMediaQuery,
 } from '@mui/material'
 import { Add, ArrowDownward, ArrowUpward, Delete, Edit, PictureAsPdf, Receipt } from '@mui/icons-material'
 
@@ -363,6 +364,7 @@ type SegEditorProps = {
 }
 
 const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHistory, allCountries, onChange }: SegEditorProps) => {
+    const isMobile = useMediaQuery('(max-width:600px)')
     const [expandedExp, setExpandedExp] = useState<Set<number>>(new Set())
     const segRates = (date: string) => getRatesForDate(ratesHistory, date || tripDate)
     const segCtry = (seg: TripSegment) => seg.country ?? defaultCountry
@@ -415,6 +417,141 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
             <Button size="small" startIcon={<Add />} onClick={add} sx={{ mt: 0.5 }}>
                 Pridať úsek
             </Button>
+        )
+    }
+
+    // Spoločný blok výdavkov segmentu
+    const ExpensesBlock = ({ i, seg }: { i: number; seg: TripSegment }) => (
+        <Box sx={{ pl: { xs: 1, sm: 5 }, pr: 1, py: 0.5, bgcolor: 'action.hover' }}>
+            <Stack sx={{ gap: 0.5 }}>
+                {(seg.expenses ?? []).map((exp, ei) => (
+                    <Stack key={ei} direction="row" sx={{ gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <TextField select size="small" sx={{ width: 160 }} label="Typ"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.type || 'cestovne'}
+                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, type: e.target.value } : x))}>
+                            {EXPENSE_TYPES.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
+                        </TextField>
+                        <TextField type="number" size="small" sx={{ width: 100 }} label="Suma"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.amount || ''}
+                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, amount: Number(e.target.value) } : x))} />
+                        <TextField size="small" sx={{ width: 68 }} label="Mena"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.currency}
+                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, currency: e.target.value.toUpperCase() } : x))} />
+                        <IconButton size="small" color="error"
+                            onClick={() => updateExpenses(i, (seg.expenses ?? []).filter((_, j) => j !== ei))}>
+                            <Delete fontSize="small" />
+                        </IconButton>
+                    </Stack>
+                ))}
+                <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
+                    onClick={() => updateExpenses(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: seg.currency || 'EUR' }])}>
+                    Pridať výdavok
+                </Button>
+            </Stack>
+        </Box>
+    )
+
+    if (isMobile) {
+        return (
+            <Stack sx={{ gap: 1 }}>
+                {segments.map((seg, i) => (
+                    <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
+                        <Stack sx={{ gap: 0.75 }}>
+                            {/* Riadok 1: dátum + doprava + akcie */}
+                            <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+                                <TextField type="date" size="small" sx={{ flex: 1 }} label="Dátum"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.date}
+                                    onChange={e => update(i, 'date', e.target.value)} />
+                                <TextField select size="small" sx={{ width: 80 }} label="Doprava"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.transport}
+                                    onChange={e => update(i, 'transport', e.target.value)}>
+                                    {TRANSPORT_OPTIONS.map(o => (
+                                        <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
+                                    ))}
+                                </TextField>
+                                <Stack direction="row" sx={{ ml: 'auto' }}>
+                                    <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
+                                        <ArrowUpward sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                    <IconButton size="small" disabled={i === segments.length - 1} onClick={() => move(i, 1)}>
+                                        <ArrowDownward sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                    <Tooltip title={`Iné výdavky${seg.expenses?.length ? ` (${seg.expenses.length})` : ''}`}>
+                                        <IconButton size="small"
+                                            color={seg.expenses?.length ? 'primary' : 'default'}
+                                            onClick={() => toggleExp(i)}>
+                                            <Receipt sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <IconButton size="small" color="error" onClick={() => remove(i)}>
+                                        <Delete fontSize="small" />
+                                    </IconButton>
+                                </Stack>
+                            </Stack>
+                            {/* Riadok 2: odchod */}
+                            <Stack direction="row" sx={{ gap: 0.5 }}>
+                                <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.fromPlace}
+                                    onChange={e => update(i, 'fromPlace', e.target.value)} />
+                                <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.fromTime}
+                                    onChange={e => update(i, 'fromTime', e.target.value)} />
+                            </Stack>
+                            {/* Riadok 3: príchod */}
+                            <Stack direction="row" sx={{ gap: 0.5 }}>
+                                <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.toPlace}
+                                    onChange={e => update(i, 'toPlace', e.target.value)} />
+                                <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.toTime}
+                                    onChange={e => update(i, 'toTime', e.target.value)} />
+                            </Stack>
+                            {/* Riadok 4: financie */}
+                            <Stack direction="row" sx={{ gap: 0.5 }}>
+                                <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.km ?? ''}
+                                    onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
+                                <TextField type="number" size="small" sx={{ flex: 1 }} label="Stravné"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.stravne ?? ''}
+                                    onChange={e => update(i, 'stravne', e.target.value ? Number(e.target.value) : null)} />
+                                <TextField size="small" sx={{ width: 62 }} label="Mena"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.currency}
+                                    onChange={e => update(i, 'currency', e.target.value.toUpperCase())} />
+                                <TextField select size="small" sx={{ width: 72 }} label="Krajina"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.country ?? defaultCountry}
+                                    onChange={e => update(i, 'country', e.target.value)}>
+                                    {allCountries.map(c => (
+                                        <MenuItem key={c.code} value={c.code}>{c.code}</MenuItem>
+                                    ))}
+                                </TextField>
+                            </Stack>
+                        </Stack>
+                        {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
+                        <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <IconButton size="small" onClick={() => insertAfter(i)}
+                                sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>
+                                <Add sx={{ fontSize: 13 }} />
+                            </IconButton>
+                        </Box>
+                    </Paper>
+                ))}
+                <Button size="small" startIcon={<Add />} onClick={add} sx={{ mt: 0.5 }}>
+                    Pridať úsek
+                </Button>
+            </Stack>
         )
     }
 
@@ -523,38 +660,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             </TextField>
                         </Box>
 
-                        {expandedExp.has(i) && (
-                            <Box sx={{ pl: 5, pr: 1, py: 0.5, bgcolor: 'action.hover' }}>
-                                <Stack sx={{ gap: 0.5 }}>
-                                    {(seg.expenses ?? []).map((exp, ei) => (
-                                        <Stack key={ei} direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                                            <TextField select size="small" sx={{ width: 160 }} label="Typ"
-                                                slotProps={{ inputLabel: { shrink: true } }}
-                                                value={exp.type || 'cestovne'}
-                                                onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, type: e.target.value } : x))}>
-                                                {EXPENSE_TYPES.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
-                                            </TextField>
-                                            <TextField type="number" size="small" sx={{ width: 100 }} label="Suma"
-                                                slotProps={{ inputLabel: { shrink: true } }}
-                                                value={exp.amount || ''}
-                                                onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, amount: Number(e.target.value) } : x))} />
-                                            <TextField size="small" sx={{ width: 68 }} label="Mena"
-                                                slotProps={{ inputLabel: { shrink: true } }}
-                                                value={exp.currency}
-                                                onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, currency: e.target.value.toUpperCase() } : x))} />
-                                            <IconButton size="small" color="error"
-                                                onClick={() => updateExpenses(i, (seg.expenses ?? []).filter((_, j) => j !== ei))}>
-                                                <Delete fontSize="small" />
-                                            </IconButton>
-                                        </Stack>
-                                    ))}
-                                    <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
-                                        onClick={() => updateExpenses(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: seg.currency || 'EUR' }])}>
-                                        Pridať výdavok
-                                    </Button>
-                                </Stack>
-                            </Box>
-                        )}
+                        {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
 
                         <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <IconButton size="small" onClick={() => insertAfter(i)}
@@ -891,6 +997,7 @@ type DialogProps = {
 }
 
 const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose }: DialogProps) => {
+    const fullScreen = useMediaQuery('(max-width:600px)')
     const [form, setForm] = useState<TravelOrderInput>(initial)
     const [saving, setSaving] = useState(false)
 
@@ -1100,7 +1207,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     }
 
     return (
-        <Dialog open onClose={onClose} maxWidth="xl" fullWidth>
+        <Dialog open onClose={onClose} maxWidth="xl" fullWidth fullScreen={fullScreen}>
             <DialogTitle>{isNew ? 'Nový cestovný príkaz' : 'Upraviť cestovný príkaz'}</DialogTitle>
             <DialogContent>
                 <Stack sx={{ gap: 1.5, mt: 1 }}>
@@ -1142,11 +1249,12 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                     </IconButton>
                                 </Stack>
 
-                                <Stack direction="row" sx={{ gap: 1.5 }}>
-                                    <TextField label="Miesto rokovania" required size="small" fullWidth
+                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                                    <TextField label="Miesto rokovania" required size="small"
+                                        sx={{ flex: '1 1 160px' }}
                                         value={trip.destination}
                                         onChange={e => updateTrip(ti, 'destination', e.target.value)} />
-                                    <TextField select label="Krajina" size="small" sx={{ minWidth: 160 }}
+                                    <TextField select label="Krajina" size="small" sx={{ flex: '0 0 160px' }}
                                         value={trip.country ?? 'SK'}
                                         onChange={e => updateTrip(ti, 'country', e.target.value)}>
                                         {allCountries.map(c => (
@@ -1157,27 +1265,30 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                             </MenuItem>
                                         ))}
                                     </TextField>
-                                    <TextField label="Účel cesty" size="small" fullWidth
+                                    <TextField label="Účel cesty" size="small"
+                                        sx={{ flex: '1 1 160px' }}
                                         value={trip.purpose ?? ''}
                                         onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
                                 </Stack>
 
-                                <Stack direction="row" sx={{ gap: 1.5 }}>
-                                    <TextField label="Miesto odchodu" size="small" fullWidth
+                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                                    <TextField label="Miesto odchodu" size="small"
+                                        sx={{ flex: '1 1 140px' }}
                                         value={trip.departureLocation ?? ''}
                                         onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
-                                    <TextField label="Dátum odchodu" type="date" size="small" sx={{ minWidth: 145 }}
+                                    <TextField label="Dátum odchodu" type="date" size="small" sx={{ flex: '0 0 145px' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.departureDate}
                                         onChange={e => updateTrip(ti, 'departureDate', e.target.value)} />
-                                    <TextField label="Čas" type="time" size="small" sx={{ width: 100 }}
+                                    <TextField label="Čas" type="time" size="small" sx={{ flex: '0 0 100px' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.departureTime ?? ''}
                                         onChange={e => updateTrip(ti, 'departureTime', e.target.value)} />
-                                    <TextField label="Miesto návratu" size="small" fullWidth
+                                    <TextField label="Miesto návratu" size="small"
+                                        sx={{ flex: '1 1 140px' }}
                                         value={trip.returnLocation ?? ''}
                                         onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
-                                    <TextField label="Dátum návratu" type="date" size="small" sx={{ minWidth: 145 }}
+                                    <TextField label="Dátum návratu" type="date" size="small" sx={{ flex: '0 0 145px' }}
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={trip.returnDate ?? ''}
                                         onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
@@ -1449,9 +1560,9 @@ export const TravelOrdersWidget = ({
 
     return (
         <Box>
-            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>Cestovné príkazy</Typography>
-                <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                         {count} {countLabel}
                     </Typography>
@@ -1478,7 +1589,7 @@ export const TravelOrdersWidget = ({
                     <Typography sx={{ color: 'text.secondary' }}>Zatiaľ žiadne cestovné príkazy.</Typography>
                 </Paper>
             ) : (
-                <Paper>
+                <Paper sx={{ overflowX: 'auto' }}>
                     <Table size="small">
                         <TableHead>
                             <TableRow>
