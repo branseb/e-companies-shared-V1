@@ -241,12 +241,18 @@ const calcSegStravne = (fromTime: string, toTime: string, country: string, entry
 type DayStravneEntry = { date: string; country: string; currency: string; hours: number; stravne: number }
 
 export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneRates): DayStravneEntry[] => {
-    const dates = [...new Set(segments.map(s => s.date))]
+    const dates = [...new Set(segments.map(s => s.date))].sort()
     const result: DayStravneEntry[] = []
 
-    for (const date of dates) {
+    for (let di = 0; di < dates.length; di++) {
+        const date = dates[di]
         const daySegs = segments.filter(s => s.date === date)
         const entry = getRatesForDate(ratesHistory, date)
+
+        // Viacdenná cesta: predchádzajúci/nasledujúci deň má úseky
+        // → predĺžiť čas prvého dňa od polnoci / posledného dňa do polnoci
+        const hasOvernightFrom = di > 0
+        const hasOvernightTo   = di < dates.length - 1
 
         // 1. Rozdeliť na súvislé bloky rovnakej krajiny (SK→CZ→SK = 3 bloky)
         const blocks: { country: string; segs: TripSegment[] }[] = []
@@ -258,17 +264,25 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
         }
 
         // 2. Pre každý blok: span = min(fromTime) → max(toTime)
-        //    (napr. [05:00-06:00, 18:00-19:00] v CZ = 14h, nie 2h)
-        //    Spany blokov tej istej krajiny sčítame → potom aplikujeme prah
+        //    Pre krajné dni viacdennej cesty rozšíriť span na polnoc:
+        //    - prvý blok prvého dňa: od 00:00 (tam bol od predchádzajúcej noci)
+        //    - posledný blok posledného dňa: do 00:00 (ostal do polnoci)
         const byCountry: Record<string, { hours: number; currency: string }> = {}
-        for (const block of blocks) {
+        for (let bi = 0; bi < blocks.length; bi++) {
+            const block = blocks[bi]
             const froms = block.segs.map(s => s.fromTime).filter(Boolean)
             const tos   = block.segs.map(s => s.toTime).filter(Boolean)
             if (!froms.length || !tos.length) continue
-            const blockHours = segHours(
-                froms.reduce((a, b) => a < b ? a : b),
-                tos.reduce((a, b) => a > b ? a : b),
-            )
+
+            let blockFrom = froms.reduce((a, b) => a < b ? a : b)
+            let blockTo   = tos.reduce((a, b) => a > b ? a : b)
+
+            if (hasOvernightFrom && bi === 0 && blockFrom !== '00:00')
+                blockFrom = '00:00'
+            if (hasOvernightTo && bi === blocks.length - 1 && blockTo !== '00:00')
+                blockTo = '00:00'
+
+            const blockHours = segHours(blockFrom, blockTo)
             if (blockHours <= 0) continue
             const countryOpt = COUNTRY_OPTIONS.find(c => c.code === block.country)
             const currency = countryOpt?.currency ?? entry.foreign[block.country]?.currency ?? 'EUR'
@@ -276,7 +290,7 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
             byCountry[block.country].hours += blockHours
         }
 
-        // 3. Aplikujeme prah na celkové hodiny krajiny (súčet spanов blokov)
+        // 3. Aplikujeme prah na celkové hodiny krajiny
         for (const [country, data] of Object.entries(byCountry)) {
             const hh = Math.floor(data.hours)
             const mm = Math.round((data.hours % 1) * 60)
