@@ -244,13 +244,22 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
     const dates = [...new Set(segments.map(s => s.date))].sort()
     const result: DayStravneEntry[] = []
 
+    const addHours = (
+        byCountry: Record<string, { hours: number; currency: string }>,
+        country: string, hours: number, entry: StravneRatesEntry,
+    ) => {
+        if (hours <= 0) return
+        const countryOpt = COUNTRY_OPTIONS.find(c => c.code === country)
+        const currency = countryOpt?.currency ?? entry.foreign[country]?.currency ?? 'EUR'
+        if (!byCountry[country]) byCountry[country] = { hours: 0, currency }
+        byCountry[country].hours += hours
+    }
+
     for (let di = 0; di < dates.length; di++) {
         const date = dates[di]
         const daySegs = segments.filter(s => s.date === date)
         const entry = getRatesForDate(ratesHistory, date)
 
-        // Viacdenná cesta: predchádzajúci/nasledujúci deň má úseky
-        // → predĺžiť čas prvého dňa od polnoci / posledného dňa do polnoci
         const hasOvernightFrom = di > 0
         const hasOvernightTo   = di < dates.length - 1
 
@@ -263,34 +272,38 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
             else last.segs.push(seg)
         }
 
-        // 2. Pre každý blok: span = min(fromTime) → max(toTime)
-        //    Pre krajné dni viacdennej cesty rozšíriť span na polnoc:
-        //    - prvý blok prvého dňa: od 00:00 (tam bol od predchádzajúcej noci)
-        //    - posledný blok posledného dňa: do 00:00 (ostal do polnoci)
         const byCountry: Record<string, { hours: number; currency: string }> = {}
-        for (let bi = 0; bi < blocks.length; bi++) {
-            const block = blocks[bi]
+
+        // 2. Čas od polnoci do prvého odchodu — v krajine kde osoba nocovala (= krajina
+        //    posledného segmentu predchádzajúceho dňa, NIE nutne krajina prvého segmentu dnes)
+        if (hasOvernightFrom) {
+            const prevSegs = segments.filter(s => s.date === dates[di - 1])
+            const overnightCtry = prevSegs[prevSegs.length - 1]?.country ?? 'SK'
+            const firstFrom = daySegs[0]?.fromTime ?? ''
+            if (firstFrom && firstFrom !== '00:00')
+                addHours(byCountry, overnightCtry, segHours('00:00', firstFrom), entry)
+        }
+
+        // 3. Samotné úseky dňa
+        for (const block of blocks) {
             const froms = block.segs.map(s => s.fromTime).filter(Boolean)
             const tos   = block.segs.map(s => s.toTime).filter(Boolean)
             if (!froms.length || !tos.length) continue
-
-            let blockFrom = froms.reduce((a, b) => a < b ? a : b)
-            let blockTo   = tos.reduce((a, b) => a > b ? a : b)
-
-            if (hasOvernightFrom && bi === 0 && blockFrom !== '00:00')
-                blockFrom = '00:00'
-            if (hasOvernightTo && bi === blocks.length - 1 && blockTo !== '00:00')
-                blockTo = '00:00'
-
-            const blockHours = segHours(blockFrom, blockTo)
-            if (blockHours <= 0) continue
-            const countryOpt = COUNTRY_OPTIONS.find(c => c.code === block.country)
-            const currency = countryOpt?.currency ?? entry.foreign[block.country]?.currency ?? 'EUR'
-            if (!byCountry[block.country]) byCountry[block.country] = { hours: 0, currency }
-            byCountry[block.country].hours += blockHours
+            const blockFrom = froms.reduce((a, b) => a < b ? a : b)
+            const blockTo   = tos.reduce((a, b) => a > b ? a : b)
+            addHours(byCountry, block.country, segHours(blockFrom, blockTo), entry)
         }
 
-        // 3. Aplikujeme prah na celkové hodiny krajiny
+        // 4. Čas od posledného príchodu do polnoci — v krajine kde osoba zostala
+        if (hasOvernightTo) {
+            const lastSeg = daySegs[daySegs.length - 1]
+            const destCtry = lastSeg?.country ?? 'SK'
+            const lastTo = lastSeg?.toTime ?? ''
+            if (lastTo && lastTo !== '00:00')
+                addHours(byCountry, destCtry, segHours(lastTo, '00:00'), entry)
+        }
+
+        // 5. Aplikujeme prah na celkové hodiny krajiny
         for (const [country, data] of Object.entries(byCountry)) {
             const hh = Math.floor(data.hours)
             const mm = Math.round((data.hours % 1) * 60)
