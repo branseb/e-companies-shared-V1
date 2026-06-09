@@ -515,7 +515,12 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
 
     return (
         <Stack sx={{ gap: 1 }}>
-            {segments.map((seg, i) => (
+            {segments.map((seg, i) => {
+                // Pobytový deň: rovnaké miesto odchodu aj príchodu, celý deň (00:00–00:00)
+                const isStay = seg.fromPlace !== '' && seg.fromPlace === seg.toPlace
+                    && seg.fromTime === '00:00' && seg.toTime === '00:00'
+
+                return (
                 <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
                     <Stack sx={{ gap: 0.75 }}>
                         <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
@@ -523,14 +528,18 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.date}
                                 onChange={e => update(i, 'date', e.target.value)} />
-                            <TextField select size="small" sx={{ width: 80 }} label="Doprava"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.transport}
-                                onChange={e => update(i, 'transport', e.target.value)}>
-                                {TRANSPORT_OPTIONS.map(o => (
-                                    <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
-                                ))}
-                            </TextField>
+                            {isStay ? (
+                                <Chip size="small" label="Pobyt" sx={{ height: 28, fontSize: 11 }} />
+                            ) : (
+                                <TextField select size="small" sx={{ width: 80 }} label="Doprava"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.transport}
+                                    onChange={e => update(i, 'transport', e.target.value)}>
+                                    {TRANSPORT_OPTIONS.map(o => (
+                                        <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
+                                    ))}
+                                </TextField>
+                            )}
                             <Stack direction="row">
                                 <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
                                     <ArrowUpward sx={{ fontSize: 14 }} />
@@ -550,31 +559,53 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 </IconButton>
                             </Stack>
                         </Stack>
+
+                        {isStay ? (
+                            <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
+                                <TextField size="small" label="Miesto pobytu" sx={{ flex: 1 }}
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.fromPlace}
+                                    onChange={e => {
+                                        const s = [...segments]
+                                        s[i] = { ...s[i], fromPlace: e.target.value, toPlace: e.target.value }
+                                        onChange(s)
+                                    }} />
+                                <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                                    celý deň
+                                </Typography>
+                            </Stack>
+                        ) : (
+                            <>
+                                <Stack direction="row" sx={{ gap: 0.5 }}>
+                                    <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={seg.fromPlace}
+                                        onChange={e => update(i, 'fromPlace', e.target.value)} />
+                                    <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={seg.fromTime}
+                                        onChange={e => update(i, 'fromTime', e.target.value)} />
+                                </Stack>
+                                <Stack direction="row" sx={{ gap: 0.5 }}>
+                                    <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={seg.toPlace}
+                                        onChange={e => update(i, 'toPlace', e.target.value)} />
+                                    <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={seg.toTime}
+                                        onChange={e => update(i, 'toTime', e.target.value)} />
+                                </Stack>
+                            </>
+                        )}
+
                         <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.fromPlace}
-                                onChange={e => update(i, 'fromPlace', e.target.value)} />
-                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.fromTime}
-                                onChange={e => update(i, 'fromTime', e.target.value)} />
-                        </Stack>
-                        <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.toPlace}
-                                onChange={e => update(i, 'toPlace', e.target.value)} />
-                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.toTime}
-                                onChange={e => update(i, 'toTime', e.target.value)} />
-                        </Stack>
-                        <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.km ?? ''}
-                                onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
+                            {!isStay && (
+                                <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    value={seg.km ?? ''}
+                                    onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
+                            )}
                             <TextField select size="small" sx={{ width: 90 }} label="Krajina"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.country ?? defaultCountry}
@@ -606,7 +637,8 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                         </IconButton>
                     </Box>
                 </Paper>
-            ))}
+                )
+            })}
             <Button size="small" startIcon={<Add />} onClick={add} sx={{ mt: 0.5 }}>
                 Pridať úsek
             </Button>
