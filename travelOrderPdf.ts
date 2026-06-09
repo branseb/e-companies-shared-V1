@@ -531,16 +531,22 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                     ? (ds.currency === 'EUR' ? fmtSk(ds.stravne) : `${fmtSk(ds.stravne)} ${ds.currency}`)
                     : undefined
 
+                // Pobytový deň: rovnaké miesto, časy 00:00–00:00 → jeden riadok bez časov
+                const isStay = seg.fromPlace !== '' && seg.fromPlace === seg.toPlace
+                    && seg.fromTime === '00:00' && seg.toTime === '00:00'
+
                 dataPairs.push({
                     od: {
-                        date: fmtD(seg.date), dir: 'Odchod',
-                        place: seg.fromPlace, time: seg.fromTime,
-                        trans: transportShort(seg.transport),
-                        km: seg.km != null ? String(seg.km) : '',
+                        date: fmtD(seg.date),
+                        dir:   isStay ? 'Pobyt' : 'Odchod',
+                        place: seg.fromPlace,
+                        time:  isStay ? '' : seg.fromTime,
+                        trans: isStay ? '' : transportShort(seg.transport),
+                        km:    isStay ? '' : (seg.km != null ? String(seg.km) : ''),
                         stravne: stravneStr,
                         spolu:   stravneStr,
                     },
-                    pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: seg.toTime, trans: '', km: '' },
+                    pr: isStay ? null : { date: '', dir: 'Príchod', place: seg.toPlace, time: seg.toTime, trans: '', km: '' },
                 })
                 si++
             }
@@ -576,7 +582,8 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     const tOff = rowH * 0.7
 
     for (const { od, pr } of dataPairs) {
-        const pairH = rowH * 2
+        const isStayRow = pr === null
+        const pairH = isStayRow ? rowH : rowH * 2
         drawColLines(y, y + pairH)
 
         if (od?.date) { bold(doc, 5.5); doc.text(od.date, cols.datum + 1, y + pairH / 2 + 1) }
@@ -585,11 +592,12 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         if (od?.place) { normal(doc, 6.5); doc.text(od.place, cols.odchod + 11, y + tOff, { maxWidth: 25 }) }
         if (od?.time)  { normal(doc, 6.5); doc.text(od.time,  cols.doprava - 1, y + tOff, { align: 'right' }) }
 
-        hLine(doc, y + rowH, cols.odchod, cols.doprava)
-
-        bold(doc, 6); doc.text(pr?.dir ?? 'Príchod', cols.odchod + 1, y + rowH + tOff)
-        if (pr?.place) { normal(doc, 6.5); doc.text(pr.place, cols.odchod + 11, y + rowH + tOff, { maxWidth: 25 }) }
-        if (pr?.time)  { normal(doc, 6.5); doc.text(pr.time,  cols.doprava - 1, y + rowH + tOff, { align: 'right' }) }
+        if (!isStayRow) {
+            hLine(doc, y + rowH, cols.odchod, cols.doprava)
+            bold(doc, 6); doc.text(pr?.dir ?? 'Príchod', cols.odchod + 1, y + rowH + tOff)
+            if (pr?.place) { normal(doc, 6.5); doc.text(pr.place, cols.odchod + 11, y + rowH + tOff, { maxWidth: 25 }) }
+            if (pr?.time)  { normal(doc, 6.5); doc.text(pr.time,  cols.doprava - 1, y + rowH + tOff, { align: 'right' }) }
+        }
 
         const vY = y + pairH / 2 + 1
         if (od?.trans)   { bold(doc, 6);   doc.text(od.trans,    cols.doprava + 1, vY) }
