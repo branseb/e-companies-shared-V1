@@ -514,7 +514,9 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         // Stravné per (dátum, krajina) — počítané per trip (nie combined) aby sa zachovala správna overnight logika
         const stravneMap = new Map<string, { stravne: number; currency: string }>()
         for (const trip of d.trips!) {
-            for (const ds of calcDailyStravne((trip.segments ?? []) as TripSegment[], rates)) {
+            const segs = (trip.segments ?? []) as TripSegment[]
+            const daily = calcDailyStravne(segs, rates)
+            for (const ds of daily) {
                 if (ds.stravne > 0) stravneMap.set(`${ds.date}|${ds.country}`, { stravne: ds.stravne, currency: ds.currency })
             }
         }

@@ -286,8 +286,10 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
 
         // 3. Samotné úseky dňa
         for (const block of blocks) {
-            const froms = block.segs.map(s => s.fromTime).filter(Boolean)
-            const tos   = block.segs.map(s => s.toTime).filter(Boolean)
+            // Pre pobytové segmenty (rovnaké miesto) prázdny čas = '00:00' (celý deň)
+            const isStayBlock = block.segs.every(s => s.fromPlace === s.toPlace)
+            const froms = block.segs.map(s => s.fromTime || (isStayBlock ? '00:00' : '')).filter(Boolean)
+            const tos   = block.segs.map(s => s.toTime   || (isStayBlock ? '00:00' : '')).filter(Boolean)
             if (!froms.length || !tos.length) continue
             const blockFrom = froms.reduce((a, b) => a < b ? a : b)
             const blockTo   = tos.reduce((a, b) => a > b ? a : b)
