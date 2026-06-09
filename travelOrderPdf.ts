@@ -535,20 +535,22 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                     ? (ds.currency === 'EUR' ? fmtSk(ds.stravne) : `${fmtSk(ds.stravne)} ${ds.currency}`)
                     : undefined
 
-                // Pobytový deň: rovnaké miesto, časy 00:00–00:00 → skryť časy (nezobrazovať 00:00)
+                // Pobytový deň: rovnaké miesto, prázdne alebo 00:00 časy → skryť časy
                 const isStay = seg.fromPlace !== '' && seg.fromPlace === seg.toPlace
-                    && seg.fromTime === '00:00' && seg.toTime === '00:00'
+                    && (!seg.fromTime || seg.fromTime === '00:00') && (!seg.toTime || seg.toTime === '00:00')
+                // Skryť '00:00' ak druhý čas nie je zadaný (napr. '' a '00:00' → oba prázdne)
+                const dispTime = (t: string, other: string) => !t || (t === '00:00' && !other) ? '' : t
 
                 dataPairs.push({
                     od: {
                         date: fmtD(seg.date), dir: 'Odchod',
-                        place: seg.fromPlace, time: isStay ? '' : seg.fromTime,
+                        place: seg.fromPlace, time: isStay ? '' : dispTime(seg.fromTime, seg.toTime),
                         trans: transportShort(seg.transport),
                         km: seg.km != null ? String(seg.km) : '',
                         stravne: stravneStr,
                         spolu:   stravneStr,
                     },
-                    pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : seg.toTime, trans: '', km: '' },
+                    pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : dispTime(seg.toTime, seg.fromTime), trans: '', km: '' },
                 })
                 si++
             }
