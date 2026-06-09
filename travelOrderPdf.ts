@@ -364,14 +364,15 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
     const stravneByCurrency: Record<string, number> = {}
 
     if (d.trips?.length) {
-        const allSegments = d.trips.flatMap(t => (t.segments ?? []) as TripSegment[])
-        for (const ds of calcDailyStravne(allSegments, rates)) {
-            const cur = ds.currency || 'EUR'
-            const rate = cur !== 'EUR' ? d.exchangeRates?.[cur] : undefined
-            if (rate && rate > 0) {
-                stravneByCurrency['EUR'] = (stravneByCurrency['EUR'] ?? 0) + +(ds.stravne / rate).toFixed(2)
-            } else {
-                stravneByCurrency[cur] = (stravneByCurrency[cur] ?? 0) + ds.stravne
+        for (const trip of d.trips) {
+            for (const ds of calcDailyStravne((trip.segments ?? []) as TripSegment[], rates)) {
+                const cur = ds.currency || 'EUR'
+                const rate = cur !== 'EUR' ? d.exchangeRates?.[cur] : undefined
+                if (rate && rate > 0) {
+                    stravneByCurrency['EUR'] = (stravneByCurrency['EUR'] ?? 0) + +(ds.stravne / rate).toFixed(2)
+                } else {
+                    stravneByCurrency[cur] = (stravneByCurrency[cur] ?? 0) + ds.stravne
+                }
             }
         }
     }
@@ -510,11 +511,12 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         const allSegs = d.trips!.flatMap(t => (t.segments ?? []) as TripSegment[])
         const rates = d.ratesHistory ?? DEFAULT_STRAVNE_RATES
 
-        // Stravné per (dátum, krajina) z calcDailyStravne
-        const dailyResults = calcDailyStravne(allSegs, rates)
+        // Stravné per (dátum, krajina) — počítané per trip (nie combined) aby sa zachovala správna overnight logika
         const stravneMap = new Map<string, { stravne: number; currency: string }>()
-        for (const ds of dailyResults) {
-            if (ds.stravne > 0) stravneMap.set(`${ds.date}|${ds.country}`, { stravne: ds.stravne, currency: ds.currency })
+        for (const trip of d.trips!) {
+            for (const ds of calcDailyStravne((trip.segments ?? []) as TripSegment[], rates)) {
+                if (ds.stravne > 0) stravneMap.set(`${ds.date}|${ds.country}`, { stravne: ds.stravne, currency: ds.currency })
+            }
         }
 
         // Posledný index segmentu pre každú (dátum, krajina) kombináciu

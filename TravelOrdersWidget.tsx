@@ -459,8 +459,8 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
     const update = (i: number, field: keyof TripSegment, value: TripSegment[typeof field]) => {
         const s = [...segments]
         s[i] = { ...s[i], [field]: value }
-        // Sync čas odchodu nasledujúceho úseku (rovnaké miesto)
-        if (field === 'toTime' && s[i + 1] && s[i + 1].fromPlace === s[i].toPlace) {
+        // Sync čas odchodu nasledujúceho úseku (rovnaké miesto, rovnaký deň)
+        if (field === 'toTime' && s[i + 1] && s[i + 1].fromPlace === s[i].toPlace && s[i + 1].date === s[i].date) {
             s[i + 1] = { ...s[i + 1], fromTime: value as string }
             s[i + 1] = { ...s[i + 1], stravne: calcSegStravne(s[i + 1].fromTime, s[i + 1].toTime, segCtry(s[i + 1]), segRates(s[i + 1].date)) }
         }
