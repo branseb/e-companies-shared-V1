@@ -294,13 +294,17 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
             addHours(byCountry, block.country, segHours(blockFrom, blockTo), entry)
         }
 
-        // 4. Čas od posledného príchodu do polnoci — v krajine kde osoba zostala
+        // 4. Čas od posledného príchodu do polnoci — v krajine kde osoba prenocovala.
+        //    Krajinu určuje prvý segment nasledujúceho dňa (tam ráno začína = tam spal),
+        //    nie nutne posledný segment dnes (môže byť SK hraničný úsek, ale noc je v CZ).
         if (hasOvernightTo) {
             const lastSeg = daySegs[daySegs.length - 1]
-            const destCtry = lastSeg?.country ?? 'SK'
-            const lastTo = lastSeg?.toTime ?? ''
-            if (lastTo && lastTo !== '00:00')
+            const lastTo  = lastSeg?.toTime ?? ''
+            if (lastTo && lastTo !== '00:00') {
+                const nextDaySegs = segments.filter(s => s.date === dates[di + 1])
+                const destCtry = nextDaySegs[0]?.country ?? lastSeg?.country ?? 'SK'
                 addHours(byCountry, destCtry, segHours(lastTo, '00:00'), entry)
+            }
         }
 
         // 5. Aplikujeme prah na celkové hodiny krajiny
