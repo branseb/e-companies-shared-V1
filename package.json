@@ -1,7 +1,7 @@
 {
   "name": "@e-companies/shared",
   "version": "1.0.0",
-  "private": true,
+  "main": "./index.ts",
   "dependencies": {
     "jspdf": "^2.5.1"
   },
