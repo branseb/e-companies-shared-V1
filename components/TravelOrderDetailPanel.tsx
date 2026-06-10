@@ -83,6 +83,21 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                     )}
                 </Stack>
 
+                {(fuelCost > 0 || amort > 0) && (
+                    <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap' }}>
+                        {fuelCost > 0 && (
+                            <Typography variant="body2">
+                                <strong>PHM:</strong> {fuelCost.toFixed(2)} EUR
+                            </Typography>
+                        )}
+                        {amort > 0 && (
+                            <Typography variant="body2">
+                                <strong>Amortizácia:</strong> {amort.toFixed(2)} EUR
+                            </Typography>
+                        )}
+                    </Stack>
+                )}
+
                 {totalParts.length > 0 && (
                     <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap' }}>
                         <Typography variant="body2">
