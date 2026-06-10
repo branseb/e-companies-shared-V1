@@ -50,7 +50,7 @@ export const emptyForm = (): TravelOrderInput => ({
     purpose:           '',
     departureLocation: '',
     departureDate:     new Date().toISOString().split('T')[0],
-    departureTime:     '08:00',
+    departureTime:     '',
     returnLocation:      '',
     returnDate:          '',
     returnTime:          '',
