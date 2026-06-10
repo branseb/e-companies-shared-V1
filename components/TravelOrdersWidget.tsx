@@ -4,7 +4,7 @@ import {
     Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
     useMediaQuery, useTheme,
 } from '@mui/material'
-import { Add, Delete, Edit, KeyboardArrowDown, KeyboardArrowUp, PictureAsPdf } from '@mui/icons-material'
+import { Add, Delete, Edit, PictureAsPdf } from '@mui/icons-material'
 import type { TravelOrder, TravelOrderInput, TravelOrdersWidgetProps } from '../types'
 import { DEFAULT_STRAVNE_RATES, STATUS_MAP } from '../constants'
 import {
@@ -288,9 +288,6 @@ export const TravelOrdersWidget = ({
                                             </TableCell>
                                             <TableCell align="right" onClick={e => e.stopPropagation()}>
                                                 <Stack direction="row" sx={{ justifyContent: 'flex-end', gap: 0.5 }}>
-                                                    <IconButton size="small" onClick={e => { e.stopPropagation(); toggleRow(r.id) }}>
-                                                        {isExpanded ? <KeyboardArrowUp fontSize="small" /> : <KeyboardArrowDown fontSize="small" />}
-                                                    </IconButton>
                                                     {onGeneratePdf && (
                                                         <Tooltip title="Generovať PDF">
                                                             <IconButton size="small" color="primary" onClick={() => onGeneratePdf(r)}>
