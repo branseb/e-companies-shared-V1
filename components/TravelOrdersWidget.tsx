@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
     Box, Button, Chip, CircularProgress, Collapse, IconButton,
     Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography,
@@ -148,8 +148,8 @@ export const TravelOrdersWidget = ({
                                 const isExpanded = expandedRows.has(r.id)
                                 const colCount = 9
                                 return (
-                                    <>
-                                        <TableRow key={r.id} hover sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }} onClick={() => toggleRow(r.id)}>
+                                    <Fragment key={r.id}>
+                                        <TableRow hover sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }} onClick={() => toggleRow(r.id)}>
                                             <TableCell sx={{ fontWeight: 500 }}>{r.employee}</TableCell>
                                             <TableCell sx={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                 {destination}
@@ -200,14 +200,14 @@ export const TravelOrdersWidget = ({
                                                 </Stack>
                                             </TableCell>
                                         </TableRow>
-                                        <TableRow key={`${r.id}-detail`}>
+                                        <TableRow>
                                             <TableCell colSpan={colCount} sx={{ p: 0, border: isExpanded ? undefined : 'none' }}>
                                                 <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                                                     <TravelOrderDetailPanel order={r} ratesHistory={effectiveRates} />
                                                 </Collapse>
                                             </TableCell>
                                         </TableRow>
-                                    </>
+                                    </Fragment>
                                 )
                             })}
                         </TableBody>
