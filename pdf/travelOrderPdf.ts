@@ -1,8 +1,9 @@
 import { jsPDF } from 'jspdf'
-import { robotoBase64 } from './robotoFont'
-import { roboto700Base64 } from './robotoBoldFont'
-import { calcDailyStravne, DEFAULT_STRAVNE_RATES, getRatesForDate } from './TravelOrdersWidget'
-import type { StravneRates, TripSegment } from './TravelOrdersWidget'
+import { robotoBase64 } from '../assets/robotoFont'
+import { roboto700Base64 } from '../assets/robotoBoldFont'
+import { calcDailyStravne, getRatesForDate } from '../helpers'
+import { DEFAULT_STRAVNE_RATES } from '../constants'
+import type { StravneRates, TripSegment } from '../types'
 
 const DEFAULT_AMORTIZATION_RATE = 0.313
 
@@ -44,6 +45,7 @@ export interface TravelOrderPdfInput {
     arrivalTime?: string | null
     returnDepartureTime?: string | null
     transportType?: string | null
+    ecv?: string | null
     distanceKm?: number | null
     fuelConsumption?: number | null
     fuelPricePerLiter?: number | null
@@ -228,8 +230,9 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     }
 
     y += 1
-    normal(doc, 5.5); doc.text('Určený dopravný prostriedok (pri vlastnom vozidle druh, priemerná spotreba PH podľa tech. preukazu)', L + 2, y + 1.5)
-    value(doc, transportShort(d.transportType), L + 2, y + 6)
+    normal(doc, 5.5); doc.text('Určený dopravný prostriedok (pri vlastnom vozidle EČV, priemerná spotreba PH podľa tech. preukazu)', L + 2, y + 1.5)
+    const transportLabel = [transportShort(d.transportType), d.ecv ? `EČV: ${d.ecv}` : null].filter(Boolean).join('  ')
+    value(doc, transportLabel, L + 2, y + 6)
     vLine(doc, 165, y - 1, y + 9)
     if (d.fuelConsumption) {
         label(doc, 'spotr.', 167, y + 1)
