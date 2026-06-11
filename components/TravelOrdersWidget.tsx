@@ -38,7 +38,7 @@ export const TravelOrdersWidget = ({
     const [statusMenu, setStatusMenu] = useState<{ anchor: HTMLElement; order: TravelOrder } | null>(null)
     const effectiveRates = ratesProp ?? DEFAULT_STRAVNE_RATES
     const theme = useTheme()
-    const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
     const toInput = (row: TravelOrder): TravelOrderInput => {
         const { id: _id, createdAt: _c, ...rest } = row
@@ -278,9 +278,9 @@ export const TravelOrdersWidget = ({
                                 <TableCell>Zamestnanec</TableCell>
                                 <TableCell>Destinácia</TableCell>
                                 <TableCell>Odchod</TableCell>
-                                <TableCell>Návrat</TableCell>
-                                <TableCell>Doprava</TableCell>
-                                <TableCell align="right">Záloha</TableCell>
+                                <TableCell sx={{ display: { md: 'none', lg: 'table-cell' } }}>Návrat</TableCell>
+                                <TableCell sx={{ display: { md: 'none', lg: 'table-cell' } }}>Doprava</TableCell>
+                                <TableCell align="right" sx={{ display: { md: 'none', lg: 'table-cell' } }}>Záloha</TableCell>
                                 <TableCell align="right">Spolu</TableCell>
                                 <TableCell>Stav</TableCell>
                                 <TableCell align="right">Akcie</TableCell>
@@ -298,18 +298,20 @@ export const TravelOrdersWidget = ({
                                                 {destination}
                                             </TableCell>
                                             <TableCell sx={{ whiteSpace: 'nowrap' }}>{depStr}</TableCell>
-                                            <TableCell sx={{ whiteSpace: 'nowrap' }}>{retStr}</TableCell>
-                                            <TableCell>
+                                            <TableCell sx={{ whiteSpace: 'nowrap', display: { md: 'none', lg: 'table-cell' } }}>{retStr}</TableCell>
+                                            <TableCell sx={{ display: { md: 'none', lg: 'table-cell' } }}>
                                                 {transportShort(r.transportType)}
                                                 {rowCarKm > 0 && ` ${rowCarKm} km`}
                                             </TableCell>
-                                            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                                            <TableCell align="right" sx={{ whiteSpace: 'nowrap', display: { md: 'none', lg: 'table-cell' } }}>
                                                 {r.advances?.length
                                                     ? r.advances.map(a => fmtAmt(a.amount, a.currency)).join(' + ')
                                                     : fmtAmt(r.advanceAmount, r.currency)}
                                             </TableCell>
-                                            <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-                                                {totalParts.length ? totalParts.join(' + ') : '—'}
+                                            <TableCell align="right" sx={{ fontWeight: 600 }}>
+                                                {totalParts.length
+                                                    ? totalParts.map((p, i) => <div key={i} style={{ whiteSpace: 'nowrap' }}>{p}</div>)
+                                                    : '—'}
                                             </TableCell>
                                             <TableCell onClick={e => e.stopPropagation()}>
                                                 <Chip {...statusChipProps(r)} />
