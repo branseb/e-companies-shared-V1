@@ -34,6 +34,19 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
     }
     const totalParts = Object.entries(totalsMap).filter(([, amt]) => amt > 0).map(([c, amt]) => `${amt.toFixed(2)} ${c}`)
 
+    const advanceMap: Record<string, number> = {}
+    if (r.advances?.length) {
+        for (const a of r.advances) advanceMap[a.currency || 'EUR'] = (advanceMap[a.currency || 'EUR'] ?? 0) + (a.amount ?? 0)
+    } else if (r.advanceAmount) {
+        advanceMap[r.currency || 'EUR'] = r.advanceAmount
+    }
+    const netMap: Record<string, number> = {}
+    for (const c of new Set([...Object.keys(totalsMap), ...Object.keys(advanceMap)])) {
+        const net = (totalsMap[c] ?? 0) - (advanceMap[c] ?? 0)
+        if (Math.abs(net) > 0.001) netMap[c] = net
+    }
+    const netParts = Object.entries(netMap).map(([c, amt]) => ({ c, amt }))
+
     return (
         <Box sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
             <Stack sx={{ gap: 1 }}>
@@ -121,6 +134,12 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                                     : fmtAmt(r.advanceAmount, r.currency)}
                             </Typography>
                         )}
+                        {netParts.map(({ c, amt }) => (
+                            <Typography key={c} variant="body2" sx={{ fontWeight: 700, color: amt > 0 ? 'success.main' : 'warning.main' }}>
+                                <strong>{amt > 0 ? 'Doplatok:' : 'Preplatok:'}</strong>{' '}
+                                {amt > 0 ? '+' : ''}{amt.toFixed(2)} {c}
+                            </Typography>
+                        ))}
                     </Stack>
                 )}
 
