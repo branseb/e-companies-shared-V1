@@ -43,30 +43,40 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                     </Typography>
                 )}
 
-                {(r.trips ?? []).map((trip, ti) => (
-                    <Box key={ti}>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {trip.destination}{trip.purpose ? ` — ${trip.purpose}` : ''}
-                        </Typography>
-                        <Stack sx={{ gap: 0.5, mt: 0.5 }}>
-                            {trip.segments.map((seg, si) => (
-                                <Box key={si} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', py: 0.25 }}>
-                                    <Chip size="small" label={fmtDate(seg.date)} sx={{ fontWeight: 600, fontSize: 11, height: 20, borderRadius: 1 }} />
-                                    <Typography variant="body2" sx={{ fontSize: 12 }}>
-                                        <strong>{seg.fromPlace}</strong>
-                                        {seg.fromTime && <span style={{ color: '#888' }}> {seg.fromTime}</span>}
-                                        {' → '}
-                                        <strong>{seg.toPlace}</strong>
-                                        {seg.toTime && <span style={{ color: '#888' }}> {seg.toTime}</span>}
-                                    </Typography>
-                                    <Chip size="small" variant="outlined" label={transportShort(seg.transport)} sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />
-                                    {seg.km != null && seg.km > 0 && <Chip size="small" variant="outlined" label={`${seg.km} km`} sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />}
-                                    {seg.stravne != null && seg.stravne > 0 && <Chip size="small" color="info" variant="outlined" label={`stravné ${seg.stravne.toFixed(2)} ${seg.currency ?? 'EUR'}`} sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />}
-                                </Box>
-                            ))}
-                        </Stack>
-                    </Box>
-                ))}
+                {(r.trips ?? []).map((trip, ti) => {
+                    const tripStravne = calcDailyStravne(trip.segments, ratesHistory)
+                    return (
+                        <Box key={ti}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {trip.destination}{trip.purpose ? ` — ${trip.purpose}` : ''}
+                            </Typography>
+                            <Stack sx={{ gap: 0.5, mt: 0.5 }}>
+                                {trip.segments.map((seg, si) => (
+                                    <Box key={si} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', py: 0.25 }}>
+                                        <Chip size="small" label={fmtDate(seg.date)} sx={{ fontWeight: 600, fontSize: 11, height: 20, borderRadius: 1 }} />
+                                        <Typography variant="body2" sx={{ fontSize: 12 }}>
+                                            <strong>{seg.fromPlace}</strong>
+                                            {seg.fromTime && <span style={{ color: '#888' }}> {seg.fromTime}</span>}
+                                            {' → '}
+                                            <strong>{seg.toPlace}</strong>
+                                            {seg.toTime && <span style={{ color: '#888' }}> {seg.toTime}</span>}
+                                        </Typography>
+                                        <Chip size="small" variant="outlined" label={transportShort(seg.transport)} sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />
+                                        {seg.km != null && seg.km > 0 && <Chip size="small" variant="outlined" label={`${seg.km} km`} sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />}
+                                    </Box>
+                                ))}
+                                {tripStravne.map((ds, i) => (
+                                    <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', py: 0.25 }}>
+                                        <Chip size="small" label={fmtDate(ds.date)} sx={{ fontWeight: 600, fontSize: 11, height: 20, borderRadius: 1 }} />
+                                        <Chip size="small" color="info" variant="outlined"
+                                            label={`stravné ${ds.stravne.toFixed(2)} ${ds.currency} (${ds.hours} h)`}
+                                            sx={{ fontSize: 11, height: 20, borderRadius: 1 }} />
+                                    </Box>
+                                ))}
+                            </Stack>
+                        </Box>
+                    )
+                })}
 
                 <Stack direction="row" sx={{ gap: 2, flexWrap: 'wrap' }}>
                     {r.transportType && (
