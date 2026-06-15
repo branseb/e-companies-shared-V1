@@ -109,6 +109,13 @@ export type CountryOption = {
     borderPrefix: string
 }
 
+export type {
+  UserRole, DocumentType, DocumentStatus, CompanyDocument,
+} from './document'
+export {
+  TYPE_LABELS, STATUS_COLOR, STATUS_LABEL, CHUNK_SIZE,
+} from './document'
+
 export type TravelOrdersWidgetProps = {
     orders: TravelOrder[]
     loading: boolean

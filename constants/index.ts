@@ -41,6 +41,8 @@ export const EXPENSE_TYPES = [
 
 export const AMORTIZATION_RATE = 0.313
 
+export const TAX_RATES = [0, 5, 10, 19, 20, 23]
+
 export const DEFAULT_ENTRY: StravneRatesEntry = {
     validFrom: '2025-01-01',
     sk_5: 9.30,

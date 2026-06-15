@@ -5,12 +5,18 @@
   "dependencies": {
     "jspdf": "^2.5.1"
   },
+  "peerDependencies": {
+    "firebase": ">=10.0.0",
+    "jsqr": ">=1.0.0"
+  },
   "devDependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.0.1",
     "@mui/material": "^9.0.1",
     "@types/react": "^19.0.0",
+    "firebase": "^12.14.0",
+    "jsqr": "^1.4.0",
     "react": "^19.2.6",
     "typescript": "~5.8.0"
   }
