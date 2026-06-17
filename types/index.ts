@@ -47,6 +47,7 @@ export type TravelOrder = {
     fuelPricePerLiter?: number | null
     advanceAmount?: number | null
     stravneAmount?: number | null
+    stravneMultiplier?: number | null
     actualExpenses?: number | null
     currency: string
     status: string

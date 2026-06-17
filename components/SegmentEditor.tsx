@@ -7,6 +7,89 @@ import type { TripSegment, StravneRates, CountryOption } from '../types'
 import { TRANSPORT_OPTIONS, EXPENSE_TYPES, COUNTRY_OPTIONS } from '../constants'
 import { calcSegStravne, getRatesForDate } from '../helpers'
 import { emptySegment } from '../helpers'
+import TimePickerField from './TimePickerField'
+
+type ExpenseEntry = { type: string; amount: number; currency: string }
+
+type ExpensesBlockProps = {
+    i: number
+    seg: TripSegment
+    onUpdate: (i: number, expenses: ExpenseEntry[]) => void
+    vreckoveLimit?: number
+    vreckoveLimitCur?: string
+    exchangeRates?: Record<string, number> | null
+}
+
+const ExpensesBlock = ({ i, seg, onUpdate, vreckoveLimit, vreckoveLimitCur, exchangeRates }: ExpensesBlockProps) => (
+    <Box sx={{ pl: { xs: 1, sm: 5 }, pr: 1, py: 0.5, bgcolor: 'action.hover' }}>
+        <Stack sx={{ gap: 0.5 }}>
+            {(seg.expenses ?? []).map((exp, ei) => {
+                const isVreckove = exp.type === 'vreckove'
+                const hasLimit = isVreckove && vreckoveLimit != null && vreckoveLimit > 0
+                const expCur = exp.currency || 'EUR'
+                const limitCur = vreckoveLimitCur || 'EUR'
+                const fmtLim = (n: number) => limitCur === 'EUR' ? `${n.toFixed(2)} €` : `${n.toFixed(2)} ${limitCur}`
+
+                let overLimit = false
+                let helperText: string | undefined
+
+                if (hasLimit) {
+                    if (expCur === limitCur) {
+                        overLimit = exp.amount > vreckoveLimit!
+                        helperText = overLimit
+                            ? `Nadlimit! Max. ${fmtLim(vreckoveLimit!)} → zdaniteľný príjem`
+                            : `Max. bez dane: ${fmtLim(vreckoveLimit!)} (40 % diét)`
+                    } else if (limitCur === 'EUR' && expCur !== 'EUR') {
+                        const rate = exchangeRates?.[expCur]
+                        if (rate && rate > 0) {
+                            overLimit = exp.amount / rate > vreckoveLimit!
+                            const limitInExpCur = +(vreckoveLimit! * rate).toFixed(2)
+                            helperText = overLimit
+                                ? `Nadlimit! Max. ≈ ${limitInExpCur.toFixed(2)} ${expCur} (${vreckoveLimit!.toFixed(2)} €) → zdaniteľný príjem`
+                                : `Max. bez dane: ≈ ${limitInExpCur.toFixed(2)} ${expCur} (${vreckoveLimit!.toFixed(2)} €, 40 % diét)`
+                        } else {
+                            helperText = `Max. bez dane: ${vreckoveLimit!.toFixed(2)} € — nastav kurz ${expCur}/EUR`
+                        }
+                    } else {
+                        helperText = `Max. bez dane: ${fmtLim(vreckoveLimit!)} (40 % diét)`
+                    }
+                }
+
+                return (
+                    <Stack key={ei} direction="row" sx={{ gap: 0.5, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <TextField select size="small" sx={{ width: 160 }} label="Typ"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.type || 'cestovne'}
+                            onChange={e => onUpdate(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, type: e.target.value } : x))}>
+                            {EXPENSE_TYPES.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
+                        </TextField>
+                        <TextField type="number" size="small" sx={{ width: 120 }} label="Suma"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.amount || ''}
+                            error={overLimit}
+                            helperText={helperText}
+                            onChange={e => onUpdate(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, amount: Number(e.target.value) } : x))} />
+                        <TextField size="small" sx={{ width: 68 }} label="Mena"
+                            slotProps={{ inputLabel: { shrink: true } }}
+                            value={exp.currency}
+                            onChange={e => onUpdate(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, currency: e.target.value.toUpperCase() } : x))} />
+                        <IconButton size="small" color="error" sx={{ mt: 0.5 }}
+                            onClick={() => onUpdate(i, (seg.expenses ?? []).filter((_, j) => j !== ei))}>
+                            <Delete fontSize="small" />
+                        </IconButton>
+                    </Stack>
+                )
+            })}
+            <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
+                onClick={() => {
+                    const c = COUNTRY_OPTIONS.find(o => o.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
+                    onUpdate(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: c }])
+                }}>
+                Pridať výdavok
+            </Button>
+        </Stack>
+    </Box>
+)
 
 type SegEditorProps = {
     segments: TripSegment[]
@@ -16,9 +99,12 @@ type SegEditorProps = {
     ratesHistory: StravneRates
     allCountries: CountryOption[]
     onChange: (segs: TripSegment[]) => void
+    vreckoveLimit?: number
+    vreckoveLimitCur?: string
+    exchangeRates?: Record<string, number> | null
 }
 
-const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHistory, allCountries, onChange }: SegEditorProps) => {
+const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHistory, allCountries, onChange, vreckoveLimit, vreckoveLimitCur, exchangeRates }: SegEditorProps) => {
     const [expandedExp, setExpandedExp] = useState<Set<number>>(new Set())
     const segRates = (date: string) => getRatesForDate(ratesHistory, date || tripDate)
     const segCtry = (seg: TripSegment) => seg.country ?? defaultCountry
@@ -76,42 +162,6 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
         )
     }
 
-    const ExpensesBlock = ({ i, seg }: { i: number; seg: TripSegment }) => (
-        <Box sx={{ pl: { xs: 1, sm: 5 }, pr: 1, py: 0.5, bgcolor: 'action.hover' }}>
-            <Stack sx={{ gap: 0.5 }}>
-                {(seg.expenses ?? []).map((exp, ei) => (
-                    <Stack key={ei} direction="row" sx={{ gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <TextField select size="small" sx={{ width: 160 }} label="Typ"
-                            slotProps={{ inputLabel: { shrink: true } }}
-                            value={exp.type || 'cestovne'}
-                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, type: e.target.value } : x))}>
-                            {EXPENSE_TYPES.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
-                        </TextField>
-                        <TextField type="number" size="small" sx={{ width: 100 }} label="Suma"
-                            slotProps={{ inputLabel: { shrink: true } }}
-                            value={exp.amount || ''}
-                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, amount: Number(e.target.value) } : x))} />
-                        <TextField size="small" sx={{ width: 68 }} label="Mena"
-                            slotProps={{ inputLabel: { shrink: true } }}
-                            value={exp.currency}
-                            onChange={e => updateExpenses(i, (seg.expenses ?? []).map((x, j) => j === ei ? { ...x, currency: e.target.value.toUpperCase() } : x))} />
-                        <IconButton size="small" color="error"
-                            onClick={() => updateExpenses(i, (seg.expenses ?? []).filter((_, j) => j !== ei))}>
-                            <Delete fontSize="small" />
-                        </IconButton>
-                    </Stack>
-                ))}
-                <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
-                    onClick={() => {
-                        const c = COUNTRY_OPTIONS.find(o => o.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
-                        updateExpenses(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: c }])
-                    }}>
-                    Pridať výdavok
-                </Button>
-            </Stack>
-        </Box>
-    )
-
     return (
         <Stack sx={{ gap: 1 }}>
             {segments.map((seg, i) => (
@@ -154,20 +204,18 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.fromPlace}
                                 onChange={e => update(i, 'fromPlace', e.target.value)} />
-                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas od"
-                                slotProps={{ inputLabel: { shrink: true } }}
+                            <TimePickerField label="Čas od" size="small" sx={{ width: 115 }}
                                 value={seg.fromTime}
-                                onChange={e => update(i, 'fromTime', e.target.value)} />
+                                onChange={v => update(i, 'fromTime', v)} />
                         </Stack>
                         <Stack direction="row" sx={{ gap: 0.5 }}>
                             <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.toPlace}
                                 onChange={e => update(i, 'toPlace', e.target.value)} />
-                            <TextField type="time" size="small" sx={{ width: 95 }} label="Čas do"
-                                slotProps={{ inputLabel: { shrink: true } }}
+                            <TimePickerField label="Čas do" size="small" sx={{ width: 115 }}
                                 value={seg.toTime}
-                                onChange={e => update(i, 'toTime', e.target.value)} />
+                                onChange={v => update(i, 'toTime', v)} />
                         </Stack>
                         <Stack direction="row" sx={{ gap: 0.5 }}>
                             <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
@@ -197,7 +245,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             )
                         })()}
                     </Stack>
-                    {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} />}
+                    {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} onUpdate={updateExpenses} vreckoveLimit={vreckoveLimit} vreckoveLimitCur={vreckoveLimitCur} exchangeRates={exchangeRates} />}
                     <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <IconButton size="small" onClick={() => insertAfter(i)}
                             sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>

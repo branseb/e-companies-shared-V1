@@ -52,6 +52,7 @@ export interface TravelOrderPdfInput {
     advanceAmount?: number | null
     advances?: Array<{ amount: number; currency: string }> | null
     stravneAmount?: number | null
+    stravneMultiplier?: number | null
     actualExpenses?: number | null
     currency: string
     freeRanajky?: boolean | null
@@ -82,7 +83,7 @@ const calcStravneFallback = (hours: number): number => {
     if (hours < 5)   return 0
     if (hours <= 12) return 9.30
     if (hours <= 18) return 13.80
-    return 20.90
+    return 20.60
 }
 
 const calcFuelCost = (km: number, consumption: number, pricePerLiter: number): number =>
@@ -348,6 +349,10 @@ interface Financials {
     fuelCost: number
     amortization: number
     amortizationRate: number
+    expCestovne: number
+    expNoclazne: number
+    expNutne: number
+    expIne: number
     totalExpenses: number
     balance: number
     balanceByCurrency: Record<string, number>
@@ -386,6 +391,27 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
         if (fallback > 0) stravneByCurrency['EUR'] = fallback
     }
 
+    // Krátenie stravného pri bezplatne poskytnutých jedlách (§5 ods. 8 zákon 283/2002)
+    const mealEntry = getRatesForDate(rates, d.departureDate)
+    const meals = mealEntry.meals ?? { ranajky: 0.25, obed: 0.40, vecera: 0.35 }
+    let mealReduction = 0
+    if (d.freeRanajky) mealReduction += meals.ranajky
+    if (d.freeObed)    mealReduction += meals.obed
+    if (d.freeVecera)  mealReduction += meals.vecera
+    if (mealReduction > 0) {
+        for (const cur of Object.keys(stravneByCurrency)) {
+            stravneByCurrency[cur] = Math.max(0, +((stravneByCurrency[cur] * (1 - mealReduction)).toFixed(2)))
+        }
+    }
+
+    // násobok stravného zamestnávateľa (§5 ods. 3 zák. 283/2002)
+    const stravneMult = d.stravneMultiplier && d.stravneMultiplier > 0 ? d.stravneMultiplier : 1
+    if (stravneMult !== 1) {
+        for (const cur of Object.keys(stravneByCurrency)) {
+            stravneByCurrency[cur] = +((stravneByCurrency[cur] * stravneMult).toFixed(2))
+        }
+    }
+
     const stravne = stravneByCurrency['EUR'] ?? 0
 
     const carKmFromSegs = d.trips?.length
@@ -394,10 +420,36 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
     const km = carKmFromSegs > 0 ? carKmFromSegs : (d.distanceKm ?? 0)
 
     const amortizationRate = getRatesForDate(rates, d.departureDate).amortizationRate ?? DEFAULT_AMORTIZATION_RATE
-    const fuelCost     = (d.applyFuelCost !== false) && km && d.fuelConsumption && d.fuelPricePerLiter
+    const fuelCost        = (d.applyFuelCost !== false) && km && d.fuelConsumption && d.fuelPricePerLiter
         ? calcFuelCost(km, d.fuelConsumption, d.fuelPricePerLiter) : 0
-    const amortization = (d.applyAmortization !== false) ? calcAmortization(km, 'car', amortizationRate) : 0
-    const totalExpenses = stravne + fuelCost + amortization + (d.actualExpenses ?? 0)
+    const amortization    = (d.applyAmortization !== false) ? calcAmortization(km, 'car', amortizationRate) : 0
+
+    // Výdavky zo segmentov — sumujeme podľa typu a konvertujeme na EUR
+    const toEur = (amount: number, currency: string): number => {
+        if (currency === 'EUR' || !currency) return amount
+        const rate = d.exchangeRates?.[currency]
+        return rate && rate > 0 ? +(amount / rate).toFixed(2) : amount
+    }
+    let expCestovne = 0, expNoclazne = 0, expNutne = 0, expIne = 0
+    if (d.trips?.length) {
+        for (const trip of d.trips) {
+            for (const seg of (trip.segments ?? []) as TripSegment[]) {
+                for (const exp of seg.expenses ?? []) {
+                    const eur = toEur(exp.amount, exp.currency)
+                    if (exp.type === 'cestovne')      expCestovne += eur
+                    else if (exp.type === 'noclazne') expNoclazne += eur
+                    else if (exp.type === 'nutne')    expNutne    += eur
+                    else                              expIne      += eur  // 'ine' + 'vreckove'
+                }
+            }
+        }
+    }
+    expCestovne = +expCestovne.toFixed(2)
+    expNoclazne = +expNoclazne.toFixed(2)
+    expNutne    = +expNutne.toFixed(2)
+    expIne      = +expIne.toFixed(2)
+
+    const totalExpenses   = stravne + fuelCost + amortization + expCestovne + expNoclazne + expNutne + expIne + (d.actualExpenses ?? 0)
 
     const advanceByCurrency: Record<string, number> = {}
     if (d.advances?.length) {
@@ -424,7 +476,7 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
     const kmOut = Math.round(km / 2)
     const kmRet = km - kmOut
 
-    return { tripHours, stravne, stravneByCurrency, fuelCost, amortization, amortizationRate, totalExpenses, balance, balanceByCurrency, advanceByCurrency, km, kmOut, kmRet }
+    return { tripHours, stravne, stravneByCurrency, fuelCost, amortization, amortizationRate, expCestovne, expNoclazne, expNutne, expIne, totalExpenses, balance, balanceByCurrency, advanceByCurrency, km, kmOut, kmRet }
 }
 
 // ── Strana 2 ─────────────────────────────────────────────────────────────────
@@ -504,6 +556,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     type TRow = {
         date: string; dir: string; place: string; time: string;
         trans: string; km: string; stravne?: string; spolu?: string; star?: boolean
+        expCestovne?: string; expNoclazne?: string; expNutne?: string; expIne?: string
     }
 
     const hasTrips = !!(d.trips && d.trips.length > 0)
@@ -544,14 +597,43 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 // Skryť '00:00' ak druhý čas nie je zadaný (napr. '' a '00:00' → oba prázdne)
                 const dispTime = (t: string, other: string) => !t || (t === '00:00' && !other) ? '' : t
 
+                // Výdavky segmentu — sumujeme podľa typu a formátujeme pre PDF riadok
+                const fmtExp = (total: number, cur: string) =>
+                    cur === 'EUR' ? fmtSk(total) : `${fmtSk(total)} ${cur}`
+                const segExpMap: Record<string, { total: number; cur: string }> = {}
+                for (const exp of seg.expenses ?? []) {
+                    const etype = exp.type || 'ine'
+                    const ecur  = exp.currency || 'EUR'
+                    if (!segExpMap[etype]) segExpMap[etype] = { total: 0, cur: ecur }
+                    segExpMap[etype].total += exp.amount
+                }
+                const segCestovne = segExpMap['cestovne']
+                const segNoclazne = segExpMap['noclazne']
+                const segNutne    = segExpMap['nutne']
+                const segIne      = (segExpMap['ine']?.total ?? 0) + (segExpMap['vreckove']?.total ?? 0)
+                const segIneCur   = segExpMap['ine']?.cur ?? segExpMap['vreckove']?.cur ?? 'EUR'
+                const segExpTotalEur = Object.values(segExpMap).reduce((sum, e) => {
+                    const rate = e.cur !== 'EUR' ? d.exchangeRates?.[e.cur] : undefined
+                    return sum + (rate && rate > 0 ? e.total / rate : e.total)
+                }, 0)
+                const stravneEur = ds
+                    ? (ds.currency === 'EUR' ? ds.stravne : d.exchangeRates?.[ds.currency] && (d.exchangeRates[ds.currency] ?? 0) > 0
+                        ? ds.stravne / d.exchangeRates[ds.currency]! : ds.stravne)
+                    : 0
+                const spoloCelkom = stravneEur + segExpTotalEur
+
                 dataPairs.push({
                     od: {
                         date: fmtD(seg.date), dir: 'Odchod',
                         place: seg.fromPlace, time: isStay ? '' : dispTime(seg.fromTime, seg.toTime),
                         trans: transportShort(seg.transport),
                         km: seg.km != null ? String(seg.km) : '',
-                        stravne: stravneStr,
-                        spolu:   stravneStr,
+                        stravne:      stravneStr,
+                        expCestovne:  segCestovne ? fmtExp(segCestovne.total, segCestovne.cur) : undefined,
+                        expNoclazne:  segNoclazne ? fmtExp(segNoclazne.total, segNoclazne.cur) : undefined,
+                        expNutne:     segNutne    ? fmtExp(segNutne.total,    segNutne.cur)    : undefined,
+                        expIne:       segIne > 0  ? fmtExp(segIne,            segIneCur)       : undefined,
+                        spolu:        spoloCelkom > 0 ? fmtSk(spoloCelkom) : stravneStr,
                     },
                     pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : dispTime(seg.toTime, seg.fromTime), trans: '', km: '' },
                 })
@@ -605,11 +687,15 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         if (pr?.time)  { normal(doc, 6.5); doc.text(pr.time,  cols.doprava - 1, y + rowH + tOff, { align: 'right' }) }
 
         const vY = y + pairH / 2 + 1
-        if (od?.trans)   { bold(doc, 6);   doc.text(od.trans,    cols.doprava + 1, vY) }
-        if (od?.km)      { normal(doc, 6); doc.text(od.km,       cols.hod - 1,     vY, { align: 'right' }) }
-        if (od?.stravne) { normal(doc, 6); doc.text(od.stravne,  cols.noclazne - 1, vY, { align: 'right' }) }
-        if (od?.spolu)   { normal(doc, 6); doc.text(od.spolu,    R - 1,            vY, { align: 'right' }) }
-        else             { normal(doc, 6); doc.text('-',          R - 1,            vY, { align: 'right' }) }
+        if (od?.trans)       { bold(doc, 6);   doc.text(od.trans,       cols.doprava + 1,  vY) }
+        if (od?.km)          { normal(doc, 6); doc.text(od.km,          cols.hod - 1,      vY, { align: 'right' }) }
+        if (od?.expCestovne) { normal(doc, 6); doc.text(od.expCestovne, cols.stravne - 1,  vY, { align: 'right' }) }
+        if (od?.stravne)     { normal(doc, 6); doc.text(od.stravne,     cols.noclazne - 1, vY, { align: 'right' }) }
+        if (od?.expNoclazne) { normal(doc, 6); doc.text(od.expNoclazne, cols.nutne - 1,    vY, { align: 'right' }) }
+        if (od?.expNutne)    { normal(doc, 6); doc.text(od.expNutne,    cols.ine - 1,      vY, { align: 'right' }) }
+        if (od?.expIne)      { normal(doc, 6); doc.text(od.expIne,      cols.spolu - 1,    vY, { align: 'right' }) }
+        if (od?.spolu)       { normal(doc, 6); doc.text(od.spolu,       R - 1,             vY, { align: 'right' }) }
+        else                 { normal(doc, 6); doc.text('-',             R - 1,             vY, { align: 'right' }) }
 
         y += pairH
         hLine(doc, y)
@@ -651,11 +737,15 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     drawSumColLines(y, y + spolRowH)
     normal(doc, 7); doc.text('...', L + 2, y + spolRowH * 0.6)
     bold(doc, 7.5); doc.text('Spolu', cols.hod + 1, y + spolRowH * 0.6)
-    ;[cols.stravne - 1, cols.nutne - 1, cols.ine - 1, cols.spolu - 1].forEach(rightX => {
-        normal(doc, 7); doc.text('0,00 €', rightX, y + spolRowH * 0.6, { align: 'right' })
-    })
+    normal(doc, 7); doc.text(f.expCestovne > 0 ? fmtEur(f.expCestovne) : '0,00 €', cols.stravne - 1, y + spolRowH * 0.6, { align: 'right' })
+    normal(doc, 7); doc.text(f.expNoclazne > 0 ? fmtEur(f.expNoclazne) : '0,00 €', cols.nutne   - 1, y + spolRowH * 0.6, { align: 'right' })
+    normal(doc, 7); doc.text(f.expNutne    > 0 ? fmtEur(f.expNutne)    : '0,00 €', cols.ine     - 1, y + spolRowH * 0.6, { align: 'right' })
+    normal(doc, 7); doc.text(f.expIne      > 0 ? fmtEur(f.expIne)      : '0,00 €', cols.spolu   - 1, y + spolRowH * 0.6, { align: 'right' })
     drawCurCol(cols.noclazne - 1, spolAllEntries, y, spolRowH)
-    drawCurCol(R - 1,             spolAllEntries, y, spolRowH)
+    const extraEur = f.expCestovne + f.expNoclazne + f.expNutne + f.expIne
+    const spol1SpoluEntries: [string, number][] = spolAllEntries.map(([c, v]) =>
+        [c, v + (c === 'EUR' ? extraEur : 0)] as [string, number])
+    drawCurCol(R - 1, spol1SpoluEntries, y, spolRowH)
     y += spolRowH
     hLine(doc, y)
     doc.setLineWidth(0.6); doc.rect(L, spol1Y, W, spolRowH); doc.setLineWidth(0.2)
@@ -698,9 +788,10 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     drawSumColLines(y, y + finalRowH)
     normal(doc, 7); doc.text('...', L + 2, y + finalRowH * 0.65)
     bold(doc, 7.5); doc.text('Spolu', cols.hod + 1, y + finalRowH * 0.65)
-    ;[cols.stravne - 1, cols.nutne - 1, cols.ine - 1, cols.spolu - 1].forEach(rightX => {
-        bold(doc, 7); doc.text('0,00 €', rightX, y + finalRowH * 0.65, { align: 'right' })
-    })
+    bold(doc, 7); doc.text(f.expCestovne > 0 ? fmtEur(f.expCestovne) : '0,00 €', cols.stravne - 1, y + finalRowH * 0.65, { align: 'right' })
+    bold(doc, 7); doc.text(f.expNoclazne > 0 ? fmtEur(f.expNoclazne) : '0,00 €', cols.nutne   - 1, y + finalRowH * 0.65, { align: 'right' })
+    bold(doc, 7); doc.text(f.expNutne    > 0 ? fmtEur(f.expNutne)    : '0,00 €', cols.ine     - 1, y + finalRowH * 0.65, { align: 'right' })
+    bold(doc, 7); doc.text(f.expIne      > 0 ? fmtEur(f.expIne)      : '0,00 €', cols.spolu   - 1, y + finalRowH * 0.65, { align: 'right' })
     drawCurCol(cols.noclazne - 1, finalStravneEntries, y, finalRowH, true)
     drawCurCol(R - 1,             finalSpoluEntries,   y, finalRowH, true)
     y += finalRowH

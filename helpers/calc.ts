@@ -118,7 +118,7 @@ export const calcStravne = (hours: number): number => {
     if (hours < 5)  return 0
     if (hours <= 12) return 9.30
     if (hours <= 18) return 13.80
-    return 20.90
+    return 20.60
 }
 
 export const calcFuelCost = (km: number, consumption: number, pricePerLiter: number): number =>

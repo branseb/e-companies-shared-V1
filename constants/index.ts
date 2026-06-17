@@ -21,13 +21,14 @@ export const COUNTRY_OPTIONS = [
 ]
 
 export const STATUS_OPTIONS = [
-    { value: 'draft',    label: 'Návrh' },
+    { value: 'navrh',    label: 'Návrh' },
     { value: 'approved', label: 'Schválený' },
     { value: 'settled',  label: 'Vyúčtovaný' },
 ]
 
-export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'info' | 'success' }> = {
-    draft:    { label: 'Návrh',       color: 'default' },
+export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'info' | 'success' | 'warning' }> = {
+    draft:    { label: 'Koncept',     color: 'default' },
+    navrh:    { label: 'Návrh',       color: 'warning' },
     approved: { label: 'Schválený',   color: 'info' },
     settled:  { label: 'Vyúčtovaný', color: 'success' },
 }
@@ -36,6 +37,7 @@ export const EXPENSE_TYPES = [
     { value: 'cestovne', label: 'Cestovné' },
     { value: 'noclazne', label: 'Nocľažné' },
     { value: 'nutne',    label: 'Nutné náhrady' },
+    { value: 'vreckove', label: 'Vreckové' },
     { value: 'ine',      label: 'Iné náhrady' },
 ]
 
@@ -47,7 +49,7 @@ export const DEFAULT_ENTRY: StravneRatesEntry = {
     validFrom: '2025-01-01',
     sk_5: 9.30,
     sk_12: 13.80,
-    sk_18: 20.90,
+    sk_18: 20.60,
     meals: { ranajky: 0.25, obed: 0.40, vecera: 0.35 },
     amortizationRate: 0.313,
     foreign: Object.fromEntries(
