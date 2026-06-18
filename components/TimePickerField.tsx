@@ -48,7 +48,10 @@ const TimePickerField = ({ label, value, onChange, sx, size }: Props) => {
                         sx,
                         slotProps: { inputLabel: { shrink: true } },
                     },
-                    dialog: { fullScreen: true },
+                    dialog: {
+                        fullScreen: true,
+                        sx: { zIndex: 1600, '& .MuiDialog-paper': { paddingTop: '48px' } },
+                    },
                 }}
             />
         </LocalizationProvider>

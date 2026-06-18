@@ -425,7 +425,10 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                         }}
                         renderInput={params => (
                             <TextField {...params} label="Meno a priezvisko" required
-                                slotProps={{ inputLabel: { shrink: true } }} />
+                                slotProps={{
+                                    ...params.slotProps,
+                                    inputLabel: { ...(params.slotProps?.inputLabel as object), shrink: true },
+                                }} />
                         )}
                     />
                     <TextField label="Bydlisko" fullWidth
