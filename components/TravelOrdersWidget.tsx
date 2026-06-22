@@ -24,6 +24,7 @@ import { TravelOrderDetailPanel } from './TravelOrderDetailPanel'
 export const TravelOrdersWidget = ({
     orders, loading, onAdd, onUpdate, onDelete, onGeneratePdf, readOnly = false,
     ratesHistory: ratesProp, onRatesChange,
+    companyRates, onCompanyRatesChange,
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
     preferences: prefsProp, onPreferencesChange,
 }: TravelOrdersWidgetProps) => {
@@ -376,8 +377,10 @@ export const TravelOrdersWidget = ({
             {ratesOpen && (
                 <RatesDialog
                     history={effectiveRates}
-                    onSave={r => { onRatesChange?.(r); setRatesOpen(false) }}
+                    onSave={r => { onRatesChange?.(r) }}
                     onClose={() => setRatesOpen(false)}
+                    companyRates={companyRates}
+                    onCompanyRatesSave={r => { onCompanyRatesChange?.(r) }}
                 />
             )}
             {prefsOpen && onPreferencesChange && (

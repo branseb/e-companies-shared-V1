@@ -1,11 +1,12 @@
 export { TravelOrdersWidget, TravelOrderDetailPanel } from './components'
 export { DEFAULT_STRAVNE_RATES, TAX_RATES } from './constants'
-export { getRatesForDate, getAllCountries } from './helpers'
+export { getRatesForDate, getAllCountries, resolveRates, RATES_ALGORITHM_VERSION } from './helpers'
 export type {
-    TravelOrder, TravelOrderInput, TravelOrdersWidgetProps,
+    TravelOrder, TravelOrderInput, TravelOrdersWidgetProps, EmployeeFormData,
     TravelOrderDetailPanelProps,
     StravneRates, StravneRatesEntry, ForeignStravneRate, StravneMeals,
     EmployeeRecord, TripSegment, TravelPreferences,
+    CompanyRateConfig, EmployeeRateConfig, EffectiveRates,
     UserRole, DocumentType, DocumentStatus, CompanyDocument,
 } from './types'
 export { TYPE_LABELS, STATUS_COLOR, STATUS_LABEL, CHUNK_SIZE, DEFAULT_TRAVEL_PREFERENCES } from './types'

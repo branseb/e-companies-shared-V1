@@ -4,37 +4,58 @@ import {
     FormControlLabel, IconButton, Stack, TextField, Typography,
 } from '@mui/material'
 import { Add, Delete, Edit } from '@mui/icons-material'
-import type { EmployeeRecord } from '../types'
+import type { EmployeeRecord, EmployeeFormData } from '../types'
 
 type EmpDialogProps = {
     employees: EmployeeRecord[]
-    onCreate: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
-    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
+    onCreate: (data: EmployeeFormData) => Promise<void>
+    onUpdate: (id: number, data: EmployeeFormData) => Promise<void>
     onDelete: (id: number) => Promise<void>
     onClose: () => void
 }
 
+const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '' })
+
 const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
     const [adding, setAdding] = useState(false)
-    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '' })
+    const [form, setForm] = useState(emptyForm())
     const [saving, setSaving] = useState(false)
 
-    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '' }); setAdding(true) }
-    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '', defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '', defaultIsElectric: !!e.defaultIsElectric, defaultEcv: e.defaultEcv ?? '' }); setAdding(true) }
+    const openAdd = () => { setEditing(null); setForm(emptyForm()); setAdding(true) }
+    const openEdit = (e: EmployeeRecord) => {
+        setEditing(e)
+        setForm({
+            name: e.name,
+            address: e.address ?? '',
+            defaultLocation: e.defaultLocation ?? '',
+            defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '',
+            defaultIsElectric: !!e.defaultIsElectric,
+            defaultEcv: e.defaultEcv ?? '',
+            rateKm: e.rateKm != null ? String(e.rateKm) : '',
+            rateMeal5_12: e.rateMeal5_12 != null ? String(e.rateMeal5_12) : '',
+            rateMeal12_18: e.rateMeal12_18 != null ? String(e.rateMeal12_18) : '',
+            rateMeal18plus: e.rateMeal18plus != null ? String(e.rateMeal18plus) : '',
+        })
+        setAdding(true)
+    }
     const cancel = () => { setAdding(false); setEditing(null) }
 
     const handleSave = async () => {
         if (!form.name.trim()) return
         setSaving(true)
         try {
-            const data = {
+            const data: EmployeeFormData = {
                 name: form.name.trim(),
                 address: form.address.trim() || undefined,
                 defaultLocation: form.defaultLocation.trim() || undefined,
                 defaultFuelConsumption: form.defaultFuelConsumption ? Number(form.defaultFuelConsumption) : undefined,
                 defaultIsElectric: form.defaultIsElectric || undefined,
                 defaultEcv: form.defaultEcv.trim().toUpperCase() || undefined,
+                rateKm: form.rateKm ? Number(form.rateKm) : null,
+                rateMeal5_12: form.rateMeal5_12 ? Number(form.rateMeal5_12) : null,
+                rateMeal12_18: form.rateMeal12_18 ? Number(form.rateMeal12_18) : null,
+                rateMeal18plus: form.rateMeal18plus ? Number(form.rateMeal18plus) : null,
             }
             if (editing) await onUpdate(editing.id, data)
             else         await onCreate(data)
@@ -54,13 +75,14 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                         <Stack key={emp.id} direction="row" sx={{ alignItems: 'center', gap: 1 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 500 }}>{emp.name}</Typography>
-                                {(emp.address || emp.defaultLocation || emp.defaultFuelConsumption != null || emp.defaultEcv) && (
+                                {(emp.address || emp.defaultLocation || emp.defaultFuelConsumption != null || emp.defaultEcv || emp.rateKm != null) && (
                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                         {[
                                             emp.address,
                                             emp.defaultLocation ? `📍 ${emp.defaultLocation}` : '',
                                             emp.defaultFuelConsumption != null ? `${emp.defaultIsElectric ? '⚡' : '⛽'} ${emp.defaultFuelConsumption} ${emp.defaultIsElectric ? 'kWh/100km' : 'l/100km'}` : '',
                                             emp.defaultEcv ? `🚗 ${emp.defaultEcv}` : '',
+                                            emp.rateKm != null ? `💶 ${emp.rateKm} €/km` : '',
                                         ].filter(Boolean).join(' · ')}
                                     </Typography>
                                 )}
@@ -97,6 +119,40 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                                 placeholder="napr. BA123AB"
                                 value={form.defaultEcv}
                                 onChange={e => setForm(f => ({ ...f, defaultEcv: e.target.value.toUpperCase() }))} />
+                            <TextField
+                                label="Individuálna sadzba km (EUR/km)"
+                                type="number" size="small" fullWidth
+                                slotProps={{ htmlInput: { step: 0.001 } }}
+                                placeholder="prázdne = firemná / zákonná"
+                                value={form.rateKm}
+                                helperText="Napr. 0.25 — prepíše firemnú aj zákonnú sadzbu"
+                                onChange={e => setForm(f => ({ ...f, rateKm: e.target.value }))} />
+                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                                Individuálne stravné (prázdne = firemná / zákonná sadzba)
+                            </Typography>
+                            <Stack direction="row" sx={{ gap: 1 }}>
+                                <TextField
+                                    label="Stravné 5–12 hod. (€)"
+                                    type="number" size="small" fullWidth
+                                    slotProps={{ htmlInput: { step: 0.01 } }}
+                                    placeholder="zákonná"
+                                    value={form.rateMeal5_12}
+                                    onChange={e => setForm(f => ({ ...f, rateMeal5_12: e.target.value }))} />
+                                <TextField
+                                    label="Stravné 12–18 hod. (€)"
+                                    type="number" size="small" fullWidth
+                                    slotProps={{ htmlInput: { step: 0.01 } }}
+                                    placeholder="zákonná"
+                                    value={form.rateMeal12_18}
+                                    onChange={e => setForm(f => ({ ...f, rateMeal12_18: e.target.value }))} />
+                                <TextField
+                                    label="Stravné 18+ hod. (€)"
+                                    type="number" size="small" fullWidth
+                                    slotProps={{ htmlInput: { step: 0.01 } }}
+                                    placeholder="zákonná"
+                                    value={form.rateMeal18plus}
+                                    onChange={e => setForm(f => ({ ...f, rateMeal18plus: e.target.value }))} />
+                            </Stack>
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <Button size="small" onClick={cancel} disabled={saving}>Zrušiť</Button>
                                 <Button size="small" variant="contained" onClick={handleSave}

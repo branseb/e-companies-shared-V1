@@ -30,7 +30,7 @@ export const calcSegStravne = (fromTime: string, toTime: string, country: string
 
 type DayStravneEntry = { date: string; country: string; currency: string; hours: number; stravne: number }
 
-export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneRates): DayStravneEntry[] => {
+export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneRates, effectiveEntry?: StravneRatesEntry): DayStravneEntry[] => {
     const dates = [...new Set(segments.map(s => s.date))].sort()
     const result: DayStravneEntry[] = []
 
@@ -48,7 +48,7 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
     for (let di = 0; di < dates.length; di++) {
         const date = dates[di]
         const daySegs = segments.filter(s => s.date === date)
-        const entry = getRatesForDate(ratesHistory, date)
+        const entry = effectiveEntry ?? getRatesForDate(ratesHistory, date)
 
         const hasOvernightFrom = di > 0
         const hasOvernightTo   = di < dates.length - 1

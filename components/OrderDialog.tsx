@@ -628,7 +628,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
                                             if (!val) return
                                             updateTrip(ti, 'country', typeof val === 'string' ? val.toUpperCase().slice(0, 10) : val.code)
                                         }}
-                                        onInputChange={(_e, val, reason) => {
+                                        onInputChange={(_e, _val, reason) => {
                                             if (reason === 'clear') updateTrip(ti, 'country', 'SK')
                                         }}
                                         isOptionEqualToValue={(o, v) => typeof v === 'string' ? o.code === v : o.code === v.code}

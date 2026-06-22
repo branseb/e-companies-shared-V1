@@ -25,9 +25,40 @@ export type Trip = {
     segments: TripSegment[]
 }
 
+export type CompanyRateConfig = {
+    kmRate?: number | null
+    meal5_12?: number | null
+    meal12_18?: number | null
+    meal18plus?: number | null
+    foreign?: Record<string, number | null>
+    useLegalRates?: boolean
+}
+
+export type EmployeeRateConfig = {
+    kmRate?: number | null
+    meal5_12?: number | null
+    meal12_18?: number | null
+    meal18plus?: number | null
+}
+
+export type EffectiveRates = {
+    sk_5: number
+    sk_12: number
+    sk_18: number
+    meals: StravneMeals
+    foreign: Record<string, ForeignStravneRate>
+    kmRate: number
+    algorithmVersion: string
+    resolvedFrom: {
+        stravne: 'employee' | 'company' | 'legal'
+        km: 'employee' | 'company' | 'legal'
+    }
+}
+
 export type TravelOrder = {
     id: number | string
     employee: string
+    employeeId?: number | null
     employeeAddress?: string | null
     collaborators?: string | null
     destination: string
@@ -65,6 +96,9 @@ export type TravelOrder = {
     exchangeRateDate?: string | null
     exchangeRates?: Record<string, number> | null
     trips?: Trip[] | null
+    ratesSnapshot?: EffectiveRates | null
+    kmRateUsed?: number | null
+    ratesAlgorithmVersion?: string | null
     createdAt: string
 }
 
@@ -78,6 +112,10 @@ export type EmployeeRecord = {
     defaultFuelConsumption?: number | null
     defaultIsElectric?: boolean | null
     defaultEcv?: string | null
+    rateKm?: number | null
+    rateMeal5_12?: number | null
+    rateMeal12_18?: number | null
+    rateMeal18plus?: number | null
 }
 
 export type ForeignStravneRate = {
@@ -129,6 +167,19 @@ export const DEFAULT_TRAVEL_PREFERENCES: TravelPreferences = {
     customPlaces: [],
 }
 
+export type EmployeeFormData = {
+    name: string
+    address?: string
+    defaultLocation?: string
+    defaultFuelConsumption?: number
+    defaultIsElectric?: boolean
+    defaultEcv?: string
+    rateKm?: number | null
+    rateMeal5_12?: number | null
+    rateMeal12_18?: number | null
+    rateMeal18plus?: number | null
+}
+
 export type TravelOrdersWidgetProps = {
     orders: TravelOrder[]
     loading: boolean
@@ -139,9 +190,11 @@ export type TravelOrdersWidgetProps = {
     readOnly?: boolean
     ratesHistory?: StravneRates | null
     onRatesChange?: (history: StravneRates) => void
+    companyRates?: CompanyRateConfig | null
+    onCompanyRatesChange?: (rates: CompanyRateConfig) => void
     employees?: EmployeeRecord[]
-    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
-    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
+    onEmployeeCreate?: (data: EmployeeFormData) => Promise<void>
+    onEmployeeUpdate?: (id: number, data: EmployeeFormData) => Promise<void>
     onEmployeeDelete?: (id: number) => Promise<void>
     preferences?: TravelPreferences | null
     onPreferencesChange?: (prefs: TravelPreferences) => void
