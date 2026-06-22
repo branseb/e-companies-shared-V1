@@ -1,6 +1,7 @@
 import type { StravneRates, StravneRatesEntry, ForeignStravneRate, CompanyRateConfig, EmployeeRateConfig, EffectiveRates } from '../types'
 import { getRatesForDate } from './rates'
 import { AMORTIZATION_RATE } from '../constants'
+import { MOBILE_FOREIGN_RATES, MOBILE_VALID_FROM } from './mobileRates'
 
 export const RATES_ALGORITHM_VERSION = '1.1'
 
@@ -20,7 +21,10 @@ const resolveForeign = (
     companyForeign?: Record<string, number | null>,
     useLegalRates?: boolean,
     employeeForeign?: Record<string, number | null> | null,
+    isMobileWorker?: boolean,
+    date?: string,
 ): Record<string, ForeignStravneRate> => {
+    const useMobile = isMobileWorker && date && date >= MOBILE_VALID_FROM
     return Object.fromEntries(
         Object.entries(legalForeign).map(([code, fr]) => {
             const emp = employeeForeign?.[code]
@@ -28,6 +32,10 @@ const resolveForeign = (
             if (!useLegalRates && companyForeign) {
                 const co = companyForeign[code]
                 if (co != null) return [code, { ...fr, rate_12: co }]
+            }
+            if (useMobile) {
+                const mob = MOBILE_FOREIGN_RATES[code]
+                if (mob != null) return [code, { ...fr, rate_12: mob.rate_12, currency: mob.currency }]
             }
             return [code, fr]
         })
@@ -39,6 +47,7 @@ export const resolveRates = (
     legalRates: StravneRates,
     companyRates?: CompanyRateConfig | null,
     employeeRates?: EmployeeRateConfig | null,
+    isMobileWorker?: boolean,
 ): EffectiveRates => {
     const legal = getRatesForDate(legalRates, travelDate)
     const useLegalRates = companyRates?.useLegalRates ?? false
@@ -53,7 +62,7 @@ export const resolveRates = (
         sk_12:            sk12.value,
         sk_18:            sk18.value,
         meals:            legal.meals,
-        foreign:          resolveForeign(legal.foreign, companyRates?.foreign, useLegalRates, employeeRates?.foreign),
+        foreign:          resolveForeign(legal.foreign, companyRates?.foreign, useLegalRates, employeeRates?.foreign, isMobileWorker, travelDate),
         kmRate:           km.value,
         algorithmVersion: RATES_ALGORITHM_VERSION,
         resolvedFrom: {

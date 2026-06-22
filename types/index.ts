@@ -40,6 +40,7 @@ export type EmployeeRateConfig = {
     meal12_18?: number | null
     meal18plus?: number | null
     foreign?: Record<string, number | null>
+    isMobileWorker?: boolean | null
 }
 
 export type EffectiveRates = {
@@ -118,6 +119,7 @@ export type EmployeeRecord = {
     rateMeal12_18?: number | null
     rateMeal18plus?: number | null
     foreign?: Record<string, number | null> | null
+    isMobileWorker?: boolean | null
 }
 
 export type ForeignStravneRate = {
@@ -176,6 +178,7 @@ export type EmployeeFormData = {
     defaultFuelConsumption?: number
     defaultIsElectric?: boolean
     defaultEcv?: string
+    isMobileWorker?: boolean
     rateKm?: number | null
     rateMeal5_12?: number | null
     rateMeal12_18?: number | null

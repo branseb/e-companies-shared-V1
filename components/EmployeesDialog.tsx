@@ -17,7 +17,7 @@ type EmpDialogProps = {
     onClose: () => void
 }
 
-const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', useCustomStravne: false, rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '', foreign: {} as Record<string, string> })
+const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', isMobileWorker: false, rateKm: '', useCustomStravne: false, rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '', foreign: {} as Record<string, string> })
 
 const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
@@ -35,6 +35,7 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
             defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '',
             defaultIsElectric: !!e.defaultIsElectric,
             defaultEcv: e.defaultEcv ?? '',
+            isMobileWorker: !!e.isMobileWorker,
             rateKm: e.rateKm != null ? String(e.rateKm) : '',
             useCustomStravne: e.rateMeal5_12 != null || e.rateMeal12_18 != null || e.rateMeal18plus != null ||
                 Object.values(e.foreign ?? {}).some(v => v != null),
@@ -63,6 +64,7 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                 defaultFuelConsumption: form.defaultFuelConsumption ? Number(form.defaultFuelConsumption) : undefined,
                 defaultIsElectric: form.defaultIsElectric || undefined,
                 defaultEcv: form.defaultEcv.trim().toUpperCase() || undefined,
+                isMobileWorker: form.isMobileWorker || undefined,
                 rateKm: form.rateKm ? Number(form.rateKm) : null,
                 rateMeal5_12: form.useCustomStravne && form.rateMeal5_12 ? Number(form.rateMeal5_12) : null,
                 rateMeal12_18: form.useCustomStravne && form.rateMeal12_18 ? Number(form.rateMeal12_18) : null,
@@ -95,6 +97,7 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                                             emp.defaultFuelConsumption != null ? `${emp.defaultIsElectric ? '⚡' : '⛽'} ${emp.defaultFuelConsumption} ${emp.defaultIsElectric ? 'kWh/100km' : 'l/100km'}` : '',
                                             emp.defaultEcv ? `🚗 ${emp.defaultEcv}` : '',
                                             emp.rateKm != null ? `💶 ${emp.rateKm} €/km` : '',
+                                            emp.isMobileWorker ? '🚛 mobilný zamestnanec' : '',
                                         ].filter(Boolean).join(' · ')}
                                     </Typography>
                                 )}
@@ -131,6 +134,23 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                                 placeholder="napr. BA123AB"
                                 value={form.defaultEcv}
                                 onChange={e => setForm(f => ({ ...f, defaultEcv: e.target.value.toUpperCase() }))} />
+                            <Tooltip title="§ 1a Opatrenia MF SR č. 9/2026 — platia vyššie zahraničné sadzby pre 31 krajín EÚ a okolia od 30.1.2026" placement="right">
+                                <FormControlLabel
+                                    control={
+                                        <Switch size="small"
+                                            checked={form.isMobileWorker}
+                                            onChange={e => setForm(f => ({ ...f, isMobileWorker: e.target.checked }))} />
+                                    }
+                                    label={
+                                        <Typography variant="body2">
+                                            Mobilný zamestnanec v cestnej doprave
+                                            <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>
+                                                (vodič — §1a)
+                                            </Typography>
+                                        </Typography>
+                                    }
+                                />
+                            </Tooltip>
                             <TextField
                                 label="Individuálna sadzba km (EUR/km)"
                                 type="number" size="small" fullWidth
