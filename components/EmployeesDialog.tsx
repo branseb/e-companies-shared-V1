@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
     Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
-    FormControlLabel, IconButton, Stack, Table, TableBody, TableCell, TableHead,
+    FormControlLabel, IconButton, Stack, Switch, Table, TableBody, TableCell, TableHead,
     TableRow, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { Add, Delete, Edit } from '@mui/icons-material'
@@ -17,7 +17,7 @@ type EmpDialogProps = {
     onClose: () => void
 }
 
-const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '', foreign: {} as Record<string, string> })
+const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', useCustomStravne: false, rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '', foreign: {} as Record<string, string> })
 
 const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
@@ -36,6 +36,8 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
             defaultIsElectric: !!e.defaultIsElectric,
             defaultEcv: e.defaultEcv ?? '',
             rateKm: e.rateKm != null ? String(e.rateKm) : '',
+            useCustomStravne: e.rateMeal5_12 != null || e.rateMeal12_18 != null || e.rateMeal18plus != null ||
+                Object.values(e.foreign ?? {}).some(v => v != null),
             rateMeal5_12: e.rateMeal5_12 != null ? String(e.rateMeal5_12) : '',
             rateMeal12_18: e.rateMeal12_18 != null ? String(e.rateMeal12_18) : '',
             rateMeal18plus: e.rateMeal18plus != null ? String(e.rateMeal18plus) : '',
@@ -51,9 +53,9 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
         if (!form.name.trim()) return
         setSaving(true)
         try {
-            const foreignData = Object.fromEntries(
-                Object.entries(form.foreign).map(([k, v]) => [k, v ? Number(v) : null])
-            )
+            const foreignData = form.useCustomStravne
+                ? Object.fromEntries(Object.entries(form.foreign).map(([k, v]) => [k, v ? Number(v) : null]))
+                : {}
             const data: EmployeeFormData = {
                 name: form.name.trim(),
                 address: form.address.trim() || undefined,
@@ -62,9 +64,9 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                 defaultIsElectric: form.defaultIsElectric || undefined,
                 defaultEcv: form.defaultEcv.trim().toUpperCase() || undefined,
                 rateKm: form.rateKm ? Number(form.rateKm) : null,
-                rateMeal5_12: form.rateMeal5_12 ? Number(form.rateMeal5_12) : null,
-                rateMeal12_18: form.rateMeal12_18 ? Number(form.rateMeal12_18) : null,
-                rateMeal18plus: form.rateMeal18plus ? Number(form.rateMeal18plus) : null,
+                rateMeal5_12: form.useCustomStravne && form.rateMeal5_12 ? Number(form.rateMeal5_12) : null,
+                rateMeal12_18: form.useCustomStravne && form.rateMeal12_18 ? Number(form.rateMeal12_18) : null,
+                rateMeal18plus: form.useCustomStravne && form.rateMeal18plus ? Number(form.rateMeal18plus) : null,
                 foreign: Object.keys(foreignData).length ? foreignData : undefined,
             }
             if (editing) await onUpdate(editing.id, data)
@@ -137,29 +139,35 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                                 value={form.rateKm}
                                 helperText="Napr. 0.25 — prepíše firemnú aj zákonnú sadzbu"
                                 onChange={e => setForm(f => ({ ...f, rateKm: e.target.value }))} />
-                            <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5 }}>
-                                Individuálne stravné (prázdne = firemná / zákonná sadzba)
-                            </Typography>
+                            <FormControlLabel
+                                control={
+                                    <Switch size="small"
+                                        checked={form.useCustomStravne}
+                                        onChange={e => setForm(f => ({ ...f, useCustomStravne: e.target.checked }))} />
+                                }
+                                label={<Typography variant="body2">Individuálne stravné</Typography>}
+                            />
+                            {form.useCustomStravne && <>
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <TextField
                                     label="Stravné 5–12 hod. (€)"
                                     type="number" size="small" fullWidth
                                     slotProps={{ htmlInput: { step: 0.01 } }}
-                                    placeholder="zákonná"
+                                    placeholder="firemná / zákonná"
                                     value={form.rateMeal5_12}
                                     onChange={e => setForm(f => ({ ...f, rateMeal5_12: e.target.value }))} />
                                 <TextField
                                     label="Stravné 12–18 hod. (€)"
                                     type="number" size="small" fullWidth
                                     slotProps={{ htmlInput: { step: 0.01 } }}
-                                    placeholder="zákonná"
+                                    placeholder="firemná / zákonná"
                                     value={form.rateMeal12_18}
                                     onChange={e => setForm(f => ({ ...f, rateMeal12_18: e.target.value }))} />
                                 <TextField
                                     label="Stravné 18+ hod. (€)"
                                     type="number" size="small" fullWidth
                                     slotProps={{ htmlInput: { step: 0.01 } }}
-                                    placeholder="zákonná"
+                                    placeholder="firemná / zákonná"
                                     value={form.rateMeal18plus}
                                     onChange={e => setForm(f => ({ ...f, rateMeal18plus: e.target.value }))} />
                             </Stack>
@@ -207,6 +215,7 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                                     </Table>
                                 </Box>
                             )}
+                            </>}
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <Button size="small" onClick={cancel} disabled={saving}>Zrušiť</Button>
                                 <Button size="small" variant="contained" onClick={handleSave}

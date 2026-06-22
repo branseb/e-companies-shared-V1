@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
     Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
-    FormControlLabel, IconButton, Stack, Switch, Table, TableBody, TableCell, TableHead,
-    TableRow, TextField, Tooltip, Typography,
+    FormControlLabel, IconButton, Stack, Switch, Tab, Table, TableBody, TableCell,
+    TableHead, TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { Add, Delete } from '@mui/icons-material'
 import type { StravneRates, StravneRatesEntry, CompanyRateConfig } from '../types'
@@ -23,6 +23,7 @@ const newEntry = (): StravneRatesEntry => ({
 })
 
 const RatesDialog = ({ history, onSave, onClose, companyRates, onCompanyRatesSave }: RatesDialogProps) => {
+    const [view, setView] = useState<'legal' | 'company'>('legal')
     const [company, setCompany] = useState<CompanyRateConfig>(companyRates ?? {})
     const [entries, setEntries] = useState<StravneRatesEntry[]>(
         history.length ? [...history].sort((a, b) => b.validFrom.localeCompare(a.validFrom)) : [newEntry()]
@@ -91,123 +92,121 @@ const RatesDialog = ({ history, onSave, onClose, companyRates, onCompanyRatesSav
     return (
         <Dialog open onClose={onClose} maxWidth="md" fullWidth>
             <DialogTitle>Sadzby stravného</DialogTitle>
-            <DialogContent>
-                <Stack sx={{ gap: 0, mt: 1 }}>
+            <DialogContent sx={{ px: 0, pt: 0 }}>
+                <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                    <Tab label="Zákonné sadzby" value="legal" />
+                    <Tab label="Firemné sadzby" value="company" />
+                </Tabs>
 
-                    <Divider textAlign="left" sx={{ mb: 2 }}>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                            Firemné sadzby
-                        </Typography>
-                    </Divider>
-                    <Stack sx={{ gap: 1.5, px: 0.5, pb: 3 }}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    size="small"
-                                    checked={!company.useLegalRates}
-                                    onChange={e => setCompany(c => ({ ...c, useLegalRates: !e.target.checked }))}
-                                />
-                            }
-                            label={
-                                <Typography variant="body2">
-                                    Použiť firemné sadzby
-                                    <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>
-                                        (ak vypnuté, použijú sa zákonné sadzby pre všetkých bez vlastného prepisu)
+                <Stack sx={{ gap: 0, px: 3 }}>
+
+                    {view === 'company' && (
+                        <Stack sx={{ gap: 1.5, pb: 2 }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        size="small"
+                                        checked={!company.useLegalRates}
+                                        onChange={e => setCompany(c => ({ ...c, useLegalRates: !e.target.checked }))}
+                                    />
+                                }
+                                label={
+                                    <Typography variant="body2">
+                                        Použiť firemné sadzby
+                                        <Typography component="span" variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>
+                                            (ak vypnuté, použijú sa zákonné sadzby pre všetkých bez vlastného prepisu)
+                                        </Typography>
                                     </Typography>
-                                </Typography>
-                            }
-                        />
-                        {!company.useLegalRates && (
-                            <Stack sx={{ gap: 2 }}>
-                                <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                    <TextField
-                                        label="Sadzba km (EUR/km)"
-                                        type="number" size="small" sx={{ width: 180 }}
-                                        slotProps={{ htmlInput: { step: 0.001 } }}
-                                        placeholder="0.313 (zákonná)"
-                                        value={company.kmRate ?? ''}
-                                        onChange={e => setCompany(c => ({ ...c, kmRate: e.target.value ? Number(e.target.value) : null }))}
-                                        helperText="Prázdne = zákonná sadzba"
-                                    />
-                                    <TextField
-                                        label="Stravné 5–12 hod."
-                                        type="number" size="small" sx={{ width: 160 }}
-                                        placeholder="zákonná"
-                                        value={company.meal5_12 ?? ''}
-                                        onChange={e => setCompany(c => ({ ...c, meal5_12: e.target.value ? Number(e.target.value) : null }))}
-                                    />
-                                    <TextField
-                                        label="Stravné 12–18 hod."
-                                        type="number" size="small" sx={{ width: 160 }}
-                                        placeholder="zákonná"
-                                        value={company.meal12_18 ?? ''}
-                                        onChange={e => setCompany(c => ({ ...c, meal12_18: e.target.value ? Number(e.target.value) : null }))}
-                                    />
-                                    <TextField
-                                        label="Stravné 18+ hod."
-                                        type="number" size="small" sx={{ width: 160 }}
-                                        placeholder="zákonná"
-                                        value={company.meal18plus ?? ''}
-                                        onChange={e => setCompany(c => ({ ...c, meal18plus: e.target.value ? Number(e.target.value) : null }))}
-                                    />
+                                }
+                            />
+                            {!company.useLegalRates && (
+                                <Stack sx={{ gap: 2 }}>
+                                    <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                                        <TextField
+                                            label="Sadzba km (EUR/km)"
+                                            type="number" size="small" sx={{ width: 180 }}
+                                            slotProps={{ htmlInput: { step: 0.001 } }}
+                                            placeholder="0.313 (zákonná)"
+                                            value={company.kmRate ?? ''}
+                                            onChange={e => setCompany(c => ({ ...c, kmRate: e.target.value ? Number(e.target.value) : null }))}
+                                            helperText="Prázdne = zákonná sadzba"
+                                        />
+                                        <TextField
+                                            label="Stravné 5–12 hod."
+                                            type="number" size="small" sx={{ width: 160 }}
+                                            placeholder="zákonná"
+                                            value={company.meal5_12 ?? ''}
+                                            onChange={e => setCompany(c => ({ ...c, meal5_12: e.target.value ? Number(e.target.value) : null }))}
+                                        />
+                                        <TextField
+                                            label="Stravné 12–18 hod."
+                                            type="number" size="small" sx={{ width: 160 }}
+                                            placeholder="zákonná"
+                                            value={company.meal12_18 ?? ''}
+                                            onChange={e => setCompany(c => ({ ...c, meal12_18: e.target.value ? Number(e.target.value) : null }))}
+                                        />
+                                        <TextField
+                                            label="Stravné 18+ hod."
+                                            type="number" size="small" sx={{ width: 160 }}
+                                            placeholder="zákonná"
+                                            value={company.meal18plus ?? ''}
+                                            onChange={e => setCompany(c => ({ ...c, meal18plus: e.target.value ? Number(e.target.value) : null }))}
+                                        />
+                                    </Stack>
+
+                                    <Box>
+                                        <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
+                                            Zahraničné stravné — firemné prepisy (prázdne = zákonná sadzba)
+                                        </Typography>
+                                        <Table size="small">
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Krajina</TableCell>
+                                                    <TableCell sx={{ width: 60 }}>Mena</TableCell>
+                                                    <TableCell sx={{ width: 130 }}>Plná sadzba (12+ hod.)</TableCell>
+                                                    <TableCell sx={{ width: 90, color: 'text.secondary', fontSize: 12 }}>Zákonná</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {active && Object.entries(active.foreign).map(([code, fr]) => {
+                                                    const base = COUNTRY_OPTIONS.find(c => c.code === code)
+                                                    const label = base?.label ?? fr.label ?? code
+                                                    const companyVal = company.foreign?.[code]
+                                                    return (
+                                                        <TableRow key={code}>
+                                                            <TableCell>{label}</TableCell>
+                                                            <TableCell sx={{ color: 'text.secondary' }}>{fr.currency}</TableCell>
+                                                            <TableCell sx={{ p: 0.5 }}>
+                                                                <Tooltip title="Prázdne = zákonná sadzba" placement="top">
+                                                                    <TextField
+                                                                        type="number" size="small" fullWidth
+                                                                        placeholder={fr.rate_12 ? String(fr.rate_12) : '—'}
+                                                                        value={companyVal ?? ''}
+                                                                        onChange={e => setCompany(c => ({
+                                                                            ...c,
+                                                                            foreign: {
+                                                                                ...c.foreign,
+                                                                                [code]: e.target.value ? Number(e.target.value) : null,
+                                                                            },
+                                                                        }))}
+                                                                    />
+                                                                </Tooltip>
+                                                            </TableCell>
+                                                            <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>
+                                                                {fr.rate_12 || '—'}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    )
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </Box>
                                 </Stack>
+                            )}
+                        </Stack>
+                    )}
 
-                                <Box>
-                                    <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
-                                        Zahraničné stravné — firemné prepisy (prázdne = zákonná sadzba)
-                                    </Typography>
-                                    <Table size="small">
-                                        <TableHead>
-                                            <TableRow>
-                                                <TableCell>Krajina</TableCell>
-                                                <TableCell sx={{ width: 60 }}>Mena</TableCell>
-                                                <TableCell sx={{ width: 130 }}>Plná sadzba (12+ hod.)</TableCell>
-                                                <TableCell sx={{ width: 90, color: 'text.secondary', fontSize: 12 }}>Zákonná</TableCell>
-                                            </TableRow>
-                                        </TableHead>
-                                        <TableBody>
-                                            {active && Object.entries(active.foreign).map(([code, fr]) => {
-                                                const base = COUNTRY_OPTIONS.find(c => c.code === code)
-                                                const label = base?.label ?? fr.label ?? code
-                                                const companyVal = company.foreign?.[code]
-                                                return (
-                                                    <TableRow key={code}>
-                                                        <TableCell>{label}</TableCell>
-                                                        <TableCell sx={{ color: 'text.secondary' }}>{fr.currency}</TableCell>
-                                                        <TableCell sx={{ p: 0.5 }}>
-                                                            <Tooltip title="Prázdne = zákonná sadzba" placement="top">
-                                                                <TextField
-                                                                    type="number" size="small" fullWidth
-                                                                    placeholder={fr.rate_12 ? String(fr.rate_12) : '—'}
-                                                                    value={companyVal ?? ''}
-                                                                    onChange={e => setCompany(c => ({
-                                                                        ...c,
-                                                                        foreign: {
-                                                                            ...c.foreign,
-                                                                            [code]: e.target.value ? Number(e.target.value) : null,
-                                                                        },
-                                                                    }))}
-                                                                />
-                                                            </Tooltip>
-                                                        </TableCell>
-                                                        <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>
-                                                            {fr.rate_12 || '—'}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )
-                                            })}
-                                        </TableBody>
-                                    </Table>
-                                </Box>
-                            </Stack>
-                        )}
-                    </Stack>
-
-                    <Divider textAlign="left" sx={{ mb: 2 }}>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                            Zákonné sadzby stravného (po obdobiach)
-                        </Typography>
-                    </Divider>
+                    {view === 'legal' && <>
                     <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap', pb: 2 }}>
                         {sorted.map((e) => (
                             <Chip key={e.validFrom} size="small"
@@ -367,6 +366,7 @@ const RatesDialog = ({ history, onSave, onClose, companyRates, onCompanyRatesSav
                             </Box>
                         </>
                     )}
+                    </>}
                 </Stack>
             </DialogContent>
             <DialogActions>
