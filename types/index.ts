@@ -39,6 +39,7 @@ export type EmployeeRateConfig = {
     meal5_12?: number | null
     meal12_18?: number | null
     meal18plus?: number | null
+    foreign?: Record<string, number | null>
 }
 
 export type EffectiveRates = {
@@ -116,6 +117,7 @@ export type EmployeeRecord = {
     rateMeal5_12?: number | null
     rateMeal12_18?: number | null
     rateMeal18plus?: number | null
+    foreign?: Record<string, number | null> | null
 }
 
 export type ForeignStravneRate = {
@@ -178,6 +180,7 @@ export type EmployeeFormData = {
     rateMeal5_12?: number | null
     rateMeal12_18?: number | null
     rateMeal18plus?: number | null
+    foreign?: Record<string, number | null>
 }
 
 export type TravelOrdersWidgetProps = {

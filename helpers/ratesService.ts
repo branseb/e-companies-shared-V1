@@ -19,12 +19,16 @@ const resolveForeign = (
     legalForeign: StravneRatesEntry['foreign'],
     companyForeign?: Record<string, number | null>,
     useLegalRates?: boolean,
+    employeeForeign?: Record<string, number | null> | null,
 ): Record<string, ForeignStravneRate> => {
-    if (useLegalRates || !companyForeign) return legalForeign
     return Object.fromEntries(
         Object.entries(legalForeign).map(([code, fr]) => {
-            const override = companyForeign[code]
-            if (override != null) return [code, { ...fr, rate_12: override }]
+            const emp = employeeForeign?.[code]
+            if (emp != null) return [code, { ...fr, rate_12: emp }]
+            if (!useLegalRates && companyForeign) {
+                const co = companyForeign[code]
+                if (co != null) return [code, { ...fr, rate_12: co }]
+            }
             return [code, fr]
         })
     )
@@ -49,7 +53,7 @@ export const resolveRates = (
         sk_12:            sk12.value,
         sk_18:            sk18.value,
         meals:            legal.meals,
-        foreign:          resolveForeign(legal.foreign, companyRates?.foreign, useLegalRates),
+        foreign:          resolveForeign(legal.foreign, companyRates?.foreign, useLegalRates, employeeRates?.foreign),
         kmRate:           km.value,
         algorithmVersion: RATES_ALGORITHM_VERSION,
         resolvedFrom: {

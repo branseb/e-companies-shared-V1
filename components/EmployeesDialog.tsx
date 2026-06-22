@@ -1,22 +1,25 @@
 import { useState } from 'react'
 import {
     Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
-    FormControlLabel, IconButton, Stack, TextField, Typography,
+    FormControlLabel, IconButton, Stack, Table, TableBody, TableCell, TableHead,
+    TableRow, TextField, Tooltip, Typography,
 } from '@mui/material'
 import { Add, Delete, Edit } from '@mui/icons-material'
-import type { EmployeeRecord, EmployeeFormData } from '../types'
+import type { EmployeeRecord, EmployeeFormData, ForeignStravneRate } from '../types'
+import { COUNTRY_OPTIONS } from '../constants'
 
 type EmpDialogProps = {
     employees: EmployeeRecord[]
+    foreignCountries?: Record<string, ForeignStravneRate>
     onCreate: (data: EmployeeFormData) => Promise<void>
     onUpdate: (id: number, data: EmployeeFormData) => Promise<void>
     onDelete: (id: number) => Promise<void>
     onClose: () => void
 }
 
-const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '' })
+const emptyForm = () => ({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '', rateKm: '', rateMeal5_12: '', rateMeal12_18: '', rateMeal18plus: '', foreign: {} as Record<string, string> })
 
-const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
+const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
     const [adding, setAdding] = useState(false)
     const [form, setForm] = useState(emptyForm())
@@ -36,6 +39,9 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
             rateMeal5_12: e.rateMeal5_12 != null ? String(e.rateMeal5_12) : '',
             rateMeal12_18: e.rateMeal12_18 != null ? String(e.rateMeal12_18) : '',
             rateMeal18plus: e.rateMeal18plus != null ? String(e.rateMeal18plus) : '',
+            foreign: Object.fromEntries(
+                Object.entries(e.foreign ?? {}).map(([k, v]) => [k, v != null ? String(v) : ''])
+            ),
         })
         setAdding(true)
     }
@@ -45,6 +51,9 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
         if (!form.name.trim()) return
         setSaving(true)
         try {
+            const foreignData = Object.fromEntries(
+                Object.entries(form.foreign).map(([k, v]) => [k, v ? Number(v) : null])
+            )
             const data: EmployeeFormData = {
                 name: form.name.trim(),
                 address: form.address.trim() || undefined,
@@ -56,6 +65,7 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                 rateMeal5_12: form.rateMeal5_12 ? Number(form.rateMeal5_12) : null,
                 rateMeal12_18: form.rateMeal12_18 ? Number(form.rateMeal12_18) : null,
                 rateMeal18plus: form.rateMeal18plus ? Number(form.rateMeal18plus) : null,
+                foreign: Object.keys(foreignData).length ? foreignData : undefined,
             }
             if (editing) await onUpdate(editing.id, data)
             else         await onCreate(data)
@@ -153,6 +163,50 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                                     value={form.rateMeal18plus}
                                     onChange={e => setForm(f => ({ ...f, rateMeal18plus: e.target.value }))} />
                             </Stack>
+                            {foreignCountries && Object.keys(foreignCountries).length > 0 && (
+                                <Box sx={{ mt: 0.5 }}>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block' }}>
+                                        Individuálne zahraničné stravné (prázdne = firemná / zákonná sadzba)
+                                    </Typography>
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell>Krajina</TableCell>
+                                                <TableCell sx={{ width: 55 }}>Mena</TableCell>
+                                                <TableCell sx={{ width: 130 }}>Sadzba (12+ hod.)</TableCell>
+                                                <TableCell sx={{ width: 80, color: 'text.secondary', fontSize: 12 }}>Ref.</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {Object.entries(foreignCountries).map(([code, fr]) => {
+                                                const label = COUNTRY_OPTIONS.find(c => c.code === code)?.label ?? fr.label ?? code
+                                                return (
+                                                    <TableRow key={code}>
+                                                        <TableCell sx={{ fontSize: 13 }}>{label}</TableCell>
+                                                        <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>{fr.currency}</TableCell>
+                                                        <TableCell sx={{ p: 0.5 }}>
+                                                            <Tooltip title="Prázdne = firemná / zákonná sadzba" placement="top">
+                                                                <TextField
+                                                                    type="number" size="small" fullWidth
+                                                                    placeholder={fr.rate_12 ? String(fr.rate_12) : '—'}
+                                                                    value={form.foreign[code] ?? ''}
+                                                                    onChange={e => setForm(f => ({
+                                                                        ...f,
+                                                                        foreign: { ...f.foreign, [code]: e.target.value },
+                                                                    }))}
+                                                                />
+                                                            </Tooltip>
+                                                        </TableCell>
+                                                        <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>
+                                                            {fr.rate_12 || '—'}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </Box>
+                            )}
                             <Stack direction="row" sx={{ gap: 1 }}>
                                 <Button size="small" onClick={cancel} disabled={saving}>Zrušiť</Button>
                                 <Button size="small" variant="contained" onClick={handleSave}

@@ -368,6 +368,7 @@ export const TravelOrdersWidget = ({
             {empOpen && onEmployeeCreate && onEmployeeUpdate && onEmployeeDelete && (
                 <EmployeesDialog
                     employees={employees}
+                    foreignCountries={getRatesForDate(effectiveRates, new Date().toISOString().split('T')[0])?.foreign}
                     onCreate={onEmployeeCreate}
                     onUpdate={onEmployeeUpdate}
                     onDelete={onEmployeeDelete}
