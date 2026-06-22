@@ -25,7 +25,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
     const entry: StravneRatesEntry | null | undefined = sorted ? sorted[selIdx] : legalEntry
 
     return (
-        <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+        <Dialog open onClose={onClose} maxWidth="md" fullWidth sx={{ '& .MuiDialog-container': { alignItems: 'flex-start', pt: 8 } }}>
             <DialogTitle>Sadzby stravného</DialogTitle>
             <DialogContent sx={{ px: 0, pt: 0, minHeight: 480 }}>
                 <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider', mb: 2 }}>
