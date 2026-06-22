@@ -65,17 +65,18 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
                                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', mb: 1 }}>
                                             Tuzemsko (SR) — EUR
                                         </Typography>
-                                        <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                                        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
                                             {[
-                                                { label: '5–12 hod.', value: entry.sk_5 },
-                                                { label: '12–18 hod.', value: entry.sk_12 },
-                                                { label: '18+ hod.', value: entry.sk_18 },
+                                                { label: '5–12 hod.', value: `${entry.sk_5} EUR` },
+                                                { label: '12–18 hod.', value: `${entry.sk_12} EUR` },
+                                                { label: '18+ hod.', value: `${entry.sk_18} EUR` },
+                                                { label: 'Amortizácia', value: `${entry.amortizationRate ?? '—'} EUR/km` },
                                             ].map(({ label, value }) => (
-                                                <TextField key={label} label={label} size="small" sx={{ width: 140 }}
-                                                    value={value} slotProps={{ input: { readOnly: true } }} />
+                                                <Box key={label} sx={{ px: 1.5, py: 1, bgcolor: 'action.hover', borderRadius: 1, minWidth: 110 }}>
+                                                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.25 }}>{label}</Typography>
+                                                    <Typography sx={{ fontWeight: 600, fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+                                                </Box>
                                             ))}
-                                            <TextField label="Amortizácia (€/km)" size="small" sx={{ width: 160 }}
-                                                value={entry.amortizationRate ?? '—'} slotProps={{ input: { readOnly: true } }} />
                                         </Stack>
                                     </Box>
 
@@ -83,14 +84,16 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
                                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', mb: 1 }}>
                                             Krátenie za bezplatné stravovanie
                                         </Typography>
-                                        <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
+                                        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
                                             {[
                                                 { label: 'Raňajky', value: `${(entry.meals.ranajky * 100).toFixed(0)} %` },
                                                 { label: 'Obed', value: `${(entry.meals.obed * 100).toFixed(0)} %` },
                                                 { label: 'Večera', value: `${(entry.meals.vecera * 100).toFixed(0)} %` },
                                             ].map(({ label, value }) => (
-                                                <TextField key={label} label={label} size="small" sx={{ width: 120 }}
-                                                    value={value} slotProps={{ input: { readOnly: true } }} />
+                                                <Box key={label} sx={{ px: 1.5, py: 1, bgcolor: 'action.hover', borderRadius: 1, minWidth: 90 }}>
+                                                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.25 }}>{label}</Typography>
+                                                    <Typography sx={{ fontWeight: 600, fontSize: 14 }}>{value}</Typography>
+                                                </Box>
                                             ))}
                                         </Stack>
                                     </Box>
