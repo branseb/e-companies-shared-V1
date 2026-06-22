@@ -12,7 +12,7 @@ type Props = {
 }
 
 const CountryAutocomplete = ({ value, allCountries, onChange, sx }: Props) => {
-    const options = allCountries.filter(o => o.code !== 'OTHER')
+    const options = allCountries
     const selected = options.find(c => c.code === value) ?? null
 
     return (
