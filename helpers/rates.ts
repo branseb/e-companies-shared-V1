@@ -8,15 +8,18 @@ export const getRatesForDate = (history: StravneRates, date: string): StravneRat
 }
 
 export const getAllCountries = (history: StravneRates): CountryOption[] => {
-    const base = COUNTRY_OPTIONS.filter(c => c.code !== 'OTHER') as CountryOption[]
-    const baseCodes = new Set(base.map(c => c.code))
-    const customCodes = new Set(
-        history.flatMap(e => Object.keys(e.foreign))
-            .filter(c => c !== 'OTHER' && !baseCodes.has(c))
-    )
-    const customs: CountryOption[] = [...customCodes].map(code => {
-        const fr = history.map(e => e.foreign[code]).find(Boolean)!
-        return { code, label: fr.label ?? code, currency: fr.currency, borderPrefix: fr.borderPrefix ?? code }
-    })
-    return [...base, ...customs]
+    if (!history.length) return COUNTRY_OPTIONS.filter(c => c.code !== 'OTHER')
+    const latest = getRatesForDate(history, new Date().toISOString().slice(0, 10))
+    return Object.entries(latest.foreign)
+        .filter(([code]) => code !== 'OTHER')
+        .map(([code, fr]) => {
+            const base = COUNTRY_OPTIONS.find(c => c.code === code)
+            return {
+                code,
+                label:        fr.label        ?? base?.label        ?? code,
+                currency:     fr.currency,
+                borderPrefix: base?.borderPrefix ?? fr.borderPrefix ?? code,
+            }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label, 'sk'))
 }

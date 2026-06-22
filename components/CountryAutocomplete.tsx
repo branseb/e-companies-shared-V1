@@ -12,19 +12,18 @@ type Props = {
 }
 
 const CountryAutocomplete = ({ value, allCountries, onChange, sx }: Props) => {
-    const options = allCountries
-    const selected = options.find(c => c.code === value) ?? null
+    const selected = allCountries.find(c => c.code === value) ?? null
 
     return (
         <Autocomplete
             size="small"
             sx={sx}
-            options={options}
+            options={allCountries}
             value={selected}
             filterOptions={(opts, { inputValue: q }) => {
                 if (!q.trim()) {
                     const nearby = NEARBY_CODES.map(code => opts.find(o => o.code === code)).filter((o): o is CountryOption => !!o)
-                    const rest = opts.filter(o => !NEARBY_CODES.includes(o.code))
+                    const rest = opts.filter(o => !NEARBY_CODES.includes(o.code)) // already sorted from getAllCountries
                     return [...nearby, ...rest]
                 }
                 const ql = q.toLowerCase()

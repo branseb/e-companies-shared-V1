@@ -20,33 +20,6 @@ export const COUNTRY_OPTIONS = [
     { code: 'OTHER', label: 'Iná krajina',   currency: 'EUR', borderPrefix: 'XX'  },
 ]
 
-// Rozšírený zoznam pre vyhľadávanie — nezobrazujú sa automaticky, len pri písaní
-export const COUNTRY_OPTIONS_EXTENDED = [
-    { code: 'CH', label: 'Švajčiarsko',            currency: 'CHF', borderPrefix: 'CH' },
-    { code: 'FR', label: 'Francúzsko',             currency: 'EUR', borderPrefix: 'FR' },
-    { code: 'IT', label: 'Taliansko',              currency: 'EUR', borderPrefix: 'IT' },
-    { code: 'SI', label: 'Slovinsko',              currency: 'EUR', borderPrefix: 'SI' },
-    { code: 'HR', label: 'Chorvátsko',             currency: 'EUR', borderPrefix: 'HR' },
-    { code: 'RO', label: 'Rumunsko',               currency: 'RON', borderPrefix: 'RO' },
-    { code: 'BG', label: 'Bulharsko',              currency: 'BGN', borderPrefix: 'BG' },
-    { code: 'RS', label: 'Srbsko',                 currency: 'RSD', borderPrefix: 'RS' },
-    { code: 'BA', label: 'Bosna a Hercegovina',    currency: 'BAM', borderPrefix: 'BA' },
-    { code: 'ME', label: 'Čierna Hora',            currency: 'EUR', borderPrefix: 'ME' },
-    { code: 'MK', label: 'Severné Macedónsko',     currency: 'MKD', borderPrefix: 'MK' },
-    { code: 'AL', label: 'Albánsko',               currency: 'ALL', borderPrefix: 'AL' },
-    { code: 'GR', label: 'Grécko',                 currency: 'EUR', borderPrefix: 'GR' },
-    { code: 'NL', label: 'Holandsko',              currency: 'EUR', borderPrefix: 'NL' },
-    { code: 'BE', label: 'Belgicko',               currency: 'EUR', borderPrefix: 'BE' },
-    { code: 'LU', label: 'Luxembursko',            currency: 'EUR', borderPrefix: 'LU' },
-    { code: 'ES', label: 'Španielsko',             currency: 'EUR', borderPrefix: 'ES' },
-    { code: 'PT', label: 'Portugalsko',            currency: 'EUR', borderPrefix: 'PT' },
-    { code: 'IE', label: 'Írsko',                  currency: 'EUR', borderPrefix: 'IE' },
-    { code: 'FI', label: 'Fínsko',                 currency: 'EUR', borderPrefix: 'FI' },
-    { code: 'SE', label: 'Švédsko',                currency: 'SEK', borderPrefix: 'SE' },
-    { code: 'NO', label: 'Nórsko',                 currency: 'NOK', borderPrefix: 'NO' },
-    { code: 'DK', label: 'Dánsko',                 currency: 'DKK', borderPrefix: 'DK' },
-    { code: 'GB', label: 'Veľká Británia',         currency: 'GBP', borderPrefix: 'GB' },
-]
 
 export const STATUS_OPTIONS = [
     { value: 'navrh',    label: 'Návrh' },

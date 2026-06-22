@@ -89,7 +89,7 @@ const EmployeesDialog = ({ employees, foreignCountries, onCreate, onUpdate, onDe
                         <Stack key={emp.id} direction="row" sx={{ alignItems: 'center', gap: 1 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 500 }}>{emp.name}</Typography>
-                                {(emp.address || emp.defaultLocation || emp.defaultFuelConsumption != null || emp.defaultEcv || emp.rateKm != null) && (
+                                {(emp.address || emp.defaultLocation || emp.defaultFuelConsumption != null || emp.defaultEcv || emp.rateKm != null || emp.isMobileWorker) && (
                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                         {[
                                             emp.address,

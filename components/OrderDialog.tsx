@@ -7,7 +7,7 @@ import {
 import { Add, ArrowBack, CheckCircle, Delete, DirectionsCar, Edit, Explore, FlagOutlined, Person, Restaurant } from '@mui/icons-material'
 import type { TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
-import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS, COUNTRY_OPTIONS_EXTENDED } from '../constants'
+import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS } from '../constants'
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
@@ -204,10 +204,6 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
     }, [effectiveCarKm, form.applyAmortization, form.departureDate, ratesHistory])
 
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
-    const allExtendedCountries = useMemo(() => {
-        const codes = new Set(allCountries.map(c => c.code))
-        return [...allCountries, ...COUNTRY_OPTIONS_EXTENDED.filter(c => !codes.has(c.code))]
-    }, [allCountries])
 
     const foreignCurrencies = useMemo(() => {
         const countries = [...new Set(
@@ -328,7 +324,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
         const depTime   = trip.departureTime ?? ''
         const dest      = trip.destination
         const tripCountryCode = trip.country ?? 'SK'
-        const destCtry  = allExtendedCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
+        const destCtry  = allCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
         const foreign   = destCtry.code !== 'SK'
 
         const mkSeg = (date: string, from: string, fromTime: string, to: string, toTime = '', segCountry = 'SK', km: number | null = null): TripSegment =>
@@ -621,9 +617,9 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
                                     <Autocomplete
                                         fullWidth
                                         freeSolo
-                                        options={allExtendedCountries}
+                                        options={allCountries}
                                         getOptionLabel={o => typeof o === 'string' ? o : (o.currency !== 'EUR' ? `${o.label} (${o.currency})` : o.label)}
-                                        value={allExtendedCountries.find(c => c.code === (trip.country ?? 'SK')) ?? (trip.country ?? 'SK')}
+                                        value={allCountries.find(c => c.code === (trip.country ?? 'SK')) ?? (trip.country ?? 'SK')}
                                         onChange={(_e, val) => {
                                             if (!val) return
                                             updateTrip(ti, 'country', typeof val === 'string' ? val.toUpperCase().slice(0, 10) : val.code)
