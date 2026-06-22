@@ -20,7 +20,7 @@ export const calcSegStravne = (fromTime: string, toTime: string, country: string
         if (h <= 18) return entry.sk_12
         return entry.sk_18
     } else {
-        const fr = entry.foreign[country]
+        const fr = entry.foreign[country] ?? entry.foreign['OTHER']
         if (!fr || !fr.rate_12) return null
         if (h < 6)   return +(fr.rate_12 * 0.25).toFixed(2)
         if (h <= 12) return +(fr.rate_12 * 0.50).toFixed(2)
@@ -40,7 +40,7 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
     ) => {
         if (hours <= 0) return
         const countryOpt = COUNTRY_OPTIONS.find(c => c.code === country)
-        const currency = countryOpt?.currency ?? entry.foreign[country]?.currency ?? 'EUR'
+        const currency = countryOpt?.currency ?? entry.foreign[country]?.currency ?? entry.foreign['OTHER']?.currency ?? 'EUR'
         if (!byCountry[country]) byCountry[country] = { hours: 0, currency }
         byCountry[country].hours += hours
     }

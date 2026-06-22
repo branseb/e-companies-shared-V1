@@ -4,23 +4,25 @@ import {
 } from '@mui/material'
 import { Add, ArrowDownward, ArrowUpward, Delete, Receipt } from '@mui/icons-material'
 import type { TripSegment, StravneRates, CountryOption } from '../types'
-import { TRANSPORT_OPTIONS, EXPENSE_TYPES, COUNTRY_OPTIONS } from '../constants'
+import { TRANSPORT_OPTIONS, EXPENSE_TYPES } from '../constants'
 import { calcSegStravne, getRatesForDate } from '../helpers'
 import { emptySegment } from '../helpers'
 import TimePickerField from './TimePickerField'
+import CountryAutocomplete from './CountryAutocomplete'
 
 type ExpenseEntry = { type: string; amount: number; currency: string }
 
 type ExpensesBlockProps = {
     i: number
     seg: TripSegment
+    allCountries: CountryOption[]
     onUpdate: (i: number, expenses: ExpenseEntry[]) => void
     vreckoveLimit?: number
     vreckoveLimitCur?: string
     exchangeRates?: Record<string, number> | null
 }
 
-const ExpensesBlock = ({ i, seg, onUpdate, vreckoveLimit, vreckoveLimitCur, exchangeRates }: ExpensesBlockProps) => (
+const ExpensesBlock = ({ i, seg, allCountries, onUpdate, vreckoveLimit, vreckoveLimitCur, exchangeRates }: ExpensesBlockProps) => (
     <Box sx={{ pl: { xs: 1, sm: 5 }, pr: 1, py: 0.5, bgcolor: 'action.hover' }}>
         <Stack sx={{ gap: 0.5 }}>
             {(seg.expenses ?? []).map((exp, ei) => {
@@ -82,7 +84,7 @@ const ExpensesBlock = ({ i, seg, onUpdate, vreckoveLimit, vreckoveLimitCur, exch
             })}
             <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
                 onClick={() => {
-                    const c = COUNTRY_OPTIONS.find(o => o.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
+                    const c = allCountries.find(o => o.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
                     onUpdate(i, [...(seg.expenses ?? []), { type: 'cestovne', amount: 0, currency: c }])
                 }}>
                 Pridať výdavok
@@ -222,14 +224,12 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
-                            <TextField select size="small" sx={{ width: 90 }} label="Krajina"
-                                slotProps={{ inputLabel: { shrink: true } }}
+                            <CountryAutocomplete
+                                sx={{ width: 170 }}
                                 value={seg.country ?? defaultCountry}
-                                onChange={e => update(i, 'country', e.target.value)}>
-                                {allCountries.map(c => (
-                                    <MenuItem key={c.code} value={c.code}>{c.code}</MenuItem>
-                                ))}
-                            </TextField>
+                                allCountries={allCountries}
+                                onChange={v => update(i, 'country', v)}
+                            />
                         </Stack>
                         {(() => {
                             const country = seg.country ?? defaultCountry
@@ -237,6 +237,12 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             const entry = segRates(seg.date)
                             const fr = entry.foreign[country]
                             if (fr && fr.rate_12 > 0) return null
+                            const other = entry.foreign['OTHER']
+                            if (other && other.rate_12 > 0) return (
+                                <Alert severity="info" sx={{ py: 0, px: 1, fontSize: 11 }}>
+                                    Neznáma krajina — používa sadzbu <strong>Iná krajina</strong> ({other.rate_12} {other.currency}/deň)
+                                </Alert>
+                            )
                             return (
                                 <Alert severity="warning" sx={{ py: 0, px: 1, fontSize: 11 }}>
                                     Sadzba stravného pre <strong>{country}</strong> nie je nastavená.
@@ -245,7 +251,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             )
                         })()}
                     </Stack>
-                    {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} onUpdate={updateExpenses} vreckoveLimit={vreckoveLimit} vreckoveLimitCur={vreckoveLimitCur} exchangeRates={exchangeRates} />}
+                    {expandedExp.has(i) && <ExpensesBlock i={i} seg={seg} allCountries={allCountries} onUpdate={updateExpenses} vreckoveLimit={vreckoveLimit} vreckoveLimitCur={vreckoveLimitCur} exchangeRates={exchangeRates} />}
                     <Box sx={{ textAlign: 'center', height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <IconButton size="small" onClick={() => insertAfter(i)}
                             sx={{ opacity: 0.25, '&:hover': { opacity: 1 }, p: 0.2 }}>
