@@ -192,7 +192,6 @@ export type TravelOrdersWidgetProps = {
     onGeneratePdf?: (order: TravelOrder) => void
     readOnly?: boolean
     ratesHistory?: StravneRates | null
-    onRatesChange?: (history: StravneRates) => void
     companyRates?: CompanyRateConfig | null
     onCompanyRatesChange?: (rates: CompanyRateConfig) => void
     employees?: EmployeeRecord[]

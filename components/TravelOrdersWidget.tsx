@@ -23,7 +23,7 @@ import { TravelOrderDetailPanel } from './TravelOrderDetailPanel'
 
 export const TravelOrdersWidget = ({
     orders, loading, onAdd, onUpdate, onDelete, onGeneratePdf, readOnly = false,
-    ratesHistory: ratesProp, onRatesChange,
+    ratesHistory: ratesProp,
     companyRates, onCompanyRatesChange,
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
     preferences: prefsProp, onPreferencesChange,
@@ -190,8 +190,8 @@ export const TravelOrdersWidget = ({
                     {onPreferencesChange && (
                         <Button size="small" variant="outlined" onClick={() => setPrefsOpen(true)}>Predvolby</Button>
                     )}
-                    {onRatesChange && (
-                        <Button size="small" onClick={() => setRatesOpen(true)}>Sadzby</Button>
+                    {onCompanyRatesChange && (
+                        <Button size="small" onClick={() => setRatesOpen(true)}>Firemné sadzby</Button>
                     )}
                     {!readOnly && (
                         <Button variant="contained" startIcon={<Add />} size="small" onClick={openNew}>
@@ -375,13 +375,12 @@ export const TravelOrdersWidget = ({
                     onClose={() => setEmpOpen(false)}
                 />
             )}
-            {ratesOpen && (
+            {ratesOpen && onCompanyRatesChange && (
                 <RatesDialog
-                    history={effectiveRates}
-                    onSave={r => { onRatesChange?.(r) }}
                     onClose={() => setRatesOpen(false)}
                     companyRates={companyRates}
-                    onCompanyRatesSave={r => { onCompanyRatesChange?.(r) }}
+                    onSave={r => { onCompanyRatesChange(r); setRatesOpen(false) }}
+                    legalEntry={getRatesForDate(effectiveRates, new Date().toISOString().split('T')[0])}
                 />
             )}
             {prefsOpen && onPreferencesChange && (
