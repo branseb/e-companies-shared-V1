@@ -358,6 +358,7 @@ export const TravelOrdersWidget = ({
                     companyRates={companyRates}
                     onSave={r => { onCompanyRatesChange(r); setRatesOpen(false) }}
                     legalEntry={getRatesForDate(effectiveRates, new Date().toISOString().split('T')[0])}
+                    ratesHistory={effectiveRates}
                 />
             )}
             {prefsOpen && onPreferencesChange && (

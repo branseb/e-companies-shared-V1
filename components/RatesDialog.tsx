@@ -4,18 +4,24 @@ import {
     FormControlLabel, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead,
     TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
-import type { StravneRatesEntry, CompanyRateConfig } from '../types'
+import type { StravneRates, StravneRatesEntry, CompanyRateConfig } from '../types'
+import { fmtDate } from '../helpers'
 
 type RatesDialogProps = {
     onClose: () => void
     companyRates?: CompanyRateConfig | null
     onSave: (rates: CompanyRateConfig) => void
     legalEntry?: StravneRatesEntry | null
+    ratesHistory?: StravneRates | null
 }
 
-const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogProps) => {
+const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }: RatesDialogProps) => {
     const [tab, setTab] = useState<'legal' | 'company'>('legal')
     const [company, setCompany] = useState<CompanyRateConfig>(companyRates ?? {})
+
+    const sorted = ratesHistory ? [...ratesHistory].sort((a, b) => b.validFrom.localeCompare(a.validFrom)) : null
+    const [selIdx, setSelIdx] = useState(0)
+    const entry: StravneRatesEntry | null | undefined = sorted ? sorted[selIdx] : legalEntry
 
     return (
         <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -30,12 +36,26 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
 
                     {tab === 'legal' && (
                         <>
-                            {!legalEntry ? (
+                            {!entry ? (
                                 <Typography sx={{ color: 'text.secondary' }}>Sadzby sa načítavajú…</Typography>
                             ) : (
                                 <>
                                     <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <Chip size="small" label={`platné od ${legalEntry.validFrom}`} color="primary" />
+                                        {sorted && sorted.length > 1 ? (
+                                            sorted.map((e, i) => (
+                                                <Chip
+                                                    key={e.validFrom}
+                                                    size="small"
+                                                    label={`od ${fmtDate(e.validFrom)}`}
+                                                    color={i === selIdx ? 'primary' : 'default'}
+                                                    variant={i === selIdx ? 'filled' : 'outlined'}
+                                                    onClick={() => setSelIdx(i)}
+                                                    sx={{ cursor: 'pointer' }}
+                                                />
+                                            ))
+                                        ) : (
+                                            <Chip size="small" label={`platné od ${fmtDate(entry.validFrom)}`} color="primary" />
+                                        )}
                                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                             Sadzby sú spravované centrálne a aktualizujú sa automaticky.
                                         </Typography>
@@ -47,15 +67,15 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         </Typography>
                                         <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
                                             {[
-                                                { label: '5–12 hod.', value: legalEntry.sk_5 },
-                                                { label: '12–18 hod.', value: legalEntry.sk_12 },
-                                                { label: '18+ hod.', value: legalEntry.sk_18 },
+                                                { label: '5–12 hod.', value: entry.sk_5 },
+                                                { label: '12–18 hod.', value: entry.sk_12 },
+                                                { label: '18+ hod.', value: entry.sk_18 },
                                             ].map(({ label, value }) => (
                                                 <TextField key={label} label={label} size="small" sx={{ width: 140 }}
                                                     value={value} slotProps={{ input: { readOnly: true } }} />
                                             ))}
                                             <TextField label="Amortizácia (€/km)" size="small" sx={{ width: 160 }}
-                                                value={legalEntry.amortizationRate ?? '—'} slotProps={{ input: { readOnly: true } }} />
+                                                value={entry.amortizationRate ?? '—'} slotProps={{ input: { readOnly: true } }} />
                                         </Stack>
                                     </Box>
 
@@ -65,9 +85,9 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         </Typography>
                                         <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
                                             {[
-                                                { label: 'Raňajky', value: `${(legalEntry.meals.ranajky * 100).toFixed(0)} %` },
-                                                { label: 'Obed', value: `${(legalEntry.meals.obed * 100).toFixed(0)} %` },
-                                                { label: 'Večera', value: `${(legalEntry.meals.vecera * 100).toFixed(0)} %` },
+                                                { label: 'Raňajky', value: `${(entry.meals.ranajky * 100).toFixed(0)} %` },
+                                                { label: 'Obed', value: `${(entry.meals.obed * 100).toFixed(0)} %` },
+                                                { label: 'Večera', value: `${(entry.meals.vecera * 100).toFixed(0)} %` },
                                             ].map(({ label, value }) => (
                                                 <TextField key={label} label={label} size="small" sx={{ width: 120 }}
                                                     value={value} slotProps={{ input: { readOnly: true } }} />
@@ -75,7 +95,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         </Stack>
                                     </Box>
 
-                                    {Object.keys(legalEntry.foreign).length > 0 && (
+                                    {Object.keys(entry.foreign).length > 0 && (
                                         <Box>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', mb: 1 }}>
                                                 Zahraničné stravné (plná sadzba — 12+ hod.)
@@ -91,7 +111,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(legalEntry.foreign)
+                                                    {Object.entries(entry.foreign)
                                                         .filter(([code]) => code !== 'OTHER')
                                                         .map(([code, fr]) => (
                                                             <TableRow key={code}>
@@ -142,7 +162,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                             label="Sadzba km (EUR/km)"
                                             type="number" size="small" sx={{ width: 180 }}
                                             slotProps={{ htmlInput: { step: 0.001 } }}
-                                            placeholder={legalEntry?.amortizationRate ? String(legalEntry.amortizationRate) : '0.313'}
+                                            placeholder={entry?.amortizationRate ? String(entry.amortizationRate) : '0.313'}
                                             value={company.kmRate ?? ''}
                                             onChange={e => setCompany(c => ({ ...c, kmRate: e.target.value ? Number(e.target.value) : null }))}
                                             helperText="Prázdne = zákonná sadzba"
@@ -150,7 +170,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         <TextField
                                             label="Stravné 5–12 hod."
                                             type="number" size="small" sx={{ width: 160 }}
-                                            placeholder={legalEntry?.sk_5 ? String(legalEntry.sk_5) : 'zákonná'}
+                                            placeholder={entry?.sk_5 ? String(entry.sk_5) : 'zákonná'}
                                             value={company.meal5_12 ?? ''}
                                             onChange={e => setCompany(c => ({ ...c, meal5_12: e.target.value ? Number(e.target.value) : null }))}
                                             helperText="Prázdne = zákonná"
@@ -158,7 +178,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         <TextField
                                             label="Stravné 12–18 hod."
                                             type="number" size="small" sx={{ width: 160 }}
-                                            placeholder={legalEntry?.sk_12 ? String(legalEntry.sk_12) : 'zákonná'}
+                                            placeholder={entry?.sk_12 ? String(entry.sk_12) : 'zákonná'}
                                             value={company.meal12_18 ?? ''}
                                             onChange={e => setCompany(c => ({ ...c, meal12_18: e.target.value ? Number(e.target.value) : null }))}
                                             helperText="Prázdne = zákonná"
@@ -166,14 +186,14 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                         <TextField
                                             label="Stravné 18+ hod."
                                             type="number" size="small" sx={{ width: 160 }}
-                                            placeholder={legalEntry?.sk_18 ? String(legalEntry.sk_18) : 'zákonná'}
+                                            placeholder={entry?.sk_18 ? String(entry.sk_18) : 'zákonná'}
                                             value={company.meal18plus ?? ''}
                                             onChange={e => setCompany(c => ({ ...c, meal18plus: e.target.value ? Number(e.target.value) : null }))}
                                             helperText="Prázdne = zákonná"
                                         />
                                     </Stack>
 
-                                    {legalEntry && Object.keys(legalEntry.foreign).length > 0 && (
+                                    {entry && Object.keys(entry.foreign).length > 0 && (
                                         <Box>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
                                                 Zahraničné stravné — firemné prepisy (prázdne = zákonná sadzba)
@@ -188,7 +208,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(legalEntry.foreign).filter(([code]) => code !== 'OTHER').map(([code, fr]) => {
+                                                    {Object.entries(entry.foreign).filter(([code]) => code !== 'OTHER').map(([code, fr]) => {
                                                         const label = fr.label ?? code
                                                         return (
                                                             <TableRow key={code}>
