@@ -1,4 +1,4 @@
-import type { TripSegment, StravneRates, StravneRatesEntry } from '../types'
+import type { TripSegment, StravneRates, StravneRatesEntry, TravelOrder } from '../types'
 import { COUNTRY_OPTIONS, AMORTIZATION_RATE } from '../constants'
 import { getRatesForDate } from './rates'
 
@@ -114,15 +114,37 @@ export const calcTripHours = (depDate: string, depTime: string, retDate: string,
     } catch { return 0 }
 }
 
-export const calcStravne = (hours: number): number => {
-    if (hours < 5)  return 0
-    if (hours <= 12) return 9.30
-    if (hours <= 18) return 13.80
-    return 20.60
-}
-
 export const calcFuelCost = (km: number, consumption: number, pricePerLiter: number): number =>
     (km / 100) * consumption * pricePerLiter
 
 export const calcAmortization = (km: number, transportType: string | null | undefined, amortizationRate?: number): number =>
     transportType === 'car' ? km * (amortizationRate ?? AMORTIZATION_RATE) : 0
+
+export const computeOrderFinancials = (order: TravelOrder, ratesHistory: StravneRates) => {
+    const carKm = (order.trips ?? []).flatMap(t => t.segments).filter(s => s.transport === 'car').reduce((s, seg) => s + (seg.km ?? 0), 0)
+    const rowCarKm = carKm > 0 ? carKm : (order.distanceKm ?? 0)
+    const fuelCost = rowCarKm && order.fuelConsumption && order.fuelPricePerLiter
+        ? calcFuelCost(rowCarKm, order.fuelConsumption, order.fuelPricePerLiter) : 0
+    const amort = rowCarKm
+        ? calcAmortization(rowCarKm, 'car', getRatesForDate(ratesHistory, order.departureDate).amortizationRate) : 0
+
+    const stravneMap: Record<string, number> = {}
+    for (const t of order.trips ?? [])
+        for (const ds of calcDailyStravne(t.segments, ratesHistory))
+            stravneMap[ds.currency] = (stravneMap[ds.currency] ?? 0) + ds.stravne
+
+    const hasSegs = Object.keys(stravneMap).length > 0
+    const totalsMap: Record<string, number> = { ...stravneMap }
+    totalsMap['EUR'] = (totalsMap['EUR'] ?? 0) + fuelCost + amort
+    const mainCur = order.currency || 'EUR'
+    totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (order.actualExpenses ?? 0)
+    if (!hasSegs) totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (order.stravneAmount ?? 0)
+    for (const t of order.trips ?? [])
+        for (const seg of t.segments)
+            for (const exp of seg.expenses ?? []) {
+                const c = exp.currency || 'EUR'
+                totalsMap[c] = (totalsMap[c] ?? 0) + (exp.amount ?? 0)
+            }
+
+    return { rowCarKm, fuelCost, amort, stravneMap, totalsMap, hasSegs }
+}

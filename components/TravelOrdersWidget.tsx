@@ -10,8 +10,7 @@ import type { TravelOrder, TravelOrderInput, TravelOrdersWidgetProps, TravelPref
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { DEFAULT_STRAVNE_RATES, STATUS_MAP, STATUS_OPTIONS } from '../constants'
 import {
-    calcFuelCost, calcAmortization, calcDailyStravne,
-    getRatesForDate,
+    computeOrderFinancials, getRatesForDate,
     fmtDate, fmtAmt, transportShort,
     emptyForm,
 } from '../helpers'
@@ -76,33 +75,11 @@ export const TravelOrdersWidget = ({
     }
 
     const computeRow = (r: TravelOrder) => {
-        const rowCarKm = (() => {
-            const t = (r.trips ?? []).flatMap(t => t.segments).filter(s => s.transport === 'car').reduce((s, seg) => s + (seg.km ?? 0), 0)
-            return t > 0 ? t : (r.distanceKm ?? 0)
-        })()
-        const fuelCost = rowCarKm && r.fuelConsumption && r.fuelPricePerLiter
-            ? calcFuelCost(rowCarKm, r.fuelConsumption, r.fuelPricePerLiter) : 0
-        const amort = rowCarKm ? calcAmortization(rowCarKm, 'car', getRatesForDate(effectiveRates, r.departureDate).amortizationRate) : 0
+        const { rowCarKm, totalsMap } = computeOrderFinancials(r, effectiveRates)
         const depStr = r.departureDate ? fmtDate(r.departureDate) : '—'
         const retDate = r.trips?.length ? r.trips[r.trips.length - 1].returnDate : r.returnDate
         const retStr = retDate ? fmtDate(retDate) : '—'
         const destination = r.trips?.length ? r.trips.map(t => t.destination).join(' / ') : r.destination
-        const stravneMap: Record<string, number> = {}
-        for (const t of r.trips ?? [])
-            for (const ds of calcDailyStravne(t.segments, effectiveRates))
-                stravneMap[ds.currency] = (stravneMap[ds.currency] ?? 0) + ds.stravne
-        const hasSegs = Object.keys(stravneMap).length > 0
-        const totalsMap: Record<string, number> = { ...stravneMap }
-        totalsMap['EUR'] = (totalsMap['EUR'] ?? 0) + fuelCost + amort
-        const mainCur = r.currency || 'EUR'
-        totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (r.actualExpenses ?? 0)
-        if (!hasSegs) totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (r.stravneAmount ?? 0)
-        for (const t of r.trips ?? [])
-            for (const seg of t.segments)
-                for (const exp of seg.expenses ?? []) {
-                    const c = exp.currency || 'EUR'
-                    totalsMap[c] = (totalsMap[c] ?? 0) + (exp.amount ?? 0)
-                }
         const totalParts = Object.entries(totalsMap).filter(([, amt]) => amt > 0).map(([c, amt]) => `${amt.toFixed(2)} ${c}`)
         const advanceStr = r.advances?.length
             ? r.advances.map(a => fmtAmt(a.amount, a.currency)).join(' + ')

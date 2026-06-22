@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Stack, Typography } from '@mui/material'
 import type { TravelOrderDetailPanelProps } from '../types'
-import { calcFuelCost, calcAmortization, calcDailyStravne, getRatesForDate } from '../helpers'
+import { computeOrderFinancials, calcDailyStravne } from '../helpers'
 import { fmtDate, fmtAmt, transportShort, transportLabel } from '../helpers'
 
 const FinRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
@@ -11,31 +11,7 @@ const FinRow = ({ label, value, bold = false }: { label: string; value: string; 
 )
 
 export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDetailPanelProps) => {
-    const rowCarKm = (() => {
-        const t = (r.trips ?? []).flatMap(t => t.segments).filter(s => s.transport === 'car').reduce((s, seg) => s + (seg.km ?? 0), 0)
-        return t > 0 ? t : (r.distanceKm ?? 0)
-    })()
-    const fuelCost = rowCarKm && r.fuelConsumption && r.fuelPricePerLiter
-        ? calcFuelCost(rowCarKm, r.fuelConsumption, r.fuelPricePerLiter) : 0
-    const amort = rowCarKm ? calcAmortization(rowCarKm, 'car', getRatesForDate(ratesHistory, r.departureDate).amortizationRate) : 0
-
-    const stravneMap: Record<string, number> = {}
-    for (const t of r.trips ?? [])
-        for (const ds of calcDailyStravne(t.segments, ratesHistory))
-            stravneMap[ds.currency] = (stravneMap[ds.currency] ?? 0) + ds.stravne
-
-    const hasSegs = Object.keys(stravneMap).length > 0
-    const totalsMap: Record<string, number> = { ...stravneMap }
-    totalsMap['EUR'] = (totalsMap['EUR'] ?? 0) + fuelCost + amort
-    const mainCur = r.currency || 'EUR'
-    totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (r.actualExpenses ?? 0)
-    if (!hasSegs) totalsMap[mainCur] = (totalsMap[mainCur] ?? 0) + (r.stravneAmount ?? 0)
-    for (const t of r.trips ?? [])
-        for (const seg of t.segments)
-            for (const exp of seg.expenses ?? []) {
-                const c = exp.currency || 'EUR'
-                totalsMap[c] = (totalsMap[c] ?? 0) + (exp.amount ?? 0)
-            }
+    const { rowCarKm, fuelCost, amort, stravneMap, totalsMap, hasSegs } = computeOrderFinancials(r, ratesHistory)
 
     const advanceMap: Record<string, number> = {}
     if (r.advances?.length) {

@@ -5,7 +5,6 @@ import {
     TableRow, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material'
 import type { StravneRatesEntry, CompanyRateConfig } from '../types'
-import { COUNTRY_OPTIONS } from '../constants'
 
 type RatesDialogProps = {
     onClose: () => void
@@ -92,11 +91,11 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(legalEntry.foreign).map(([code, fr]) => {
-                                                        const label = COUNTRY_OPTIONS.find(c => c.code === code)?.label ?? fr.label ?? code
-                                                        return (
+                                                    {Object.entries(legalEntry.foreign)
+                                                        .filter(([code]) => code !== 'OTHER')
+                                                        .map(([code, fr]) => (
                                                             <TableRow key={code}>
-                                                                <TableCell>{label}</TableCell>
+                                                                <TableCell>{fr.label ?? code}</TableCell>
                                                                 <TableCell sx={{ color: 'text.secondary' }}>{fr.currency}</TableCell>
                                                                 <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>
                                                                     {fr.rate_12 ? (fr.rate_12 * 0.25).toFixed(2) : '—'}
@@ -106,8 +105,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                                                 </TableCell>
                                                                 <TableCell sx={{ fontWeight: 500 }}>{fr.rate_12 || '—'}</TableCell>
                                                             </TableRow>
-                                                        )
-                                                    })}
+                                                        ))}
                                                 </TableBody>
                                             </Table>
                                         </Box>
@@ -190,8 +188,8 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry }: RatesDialogP
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {Object.entries(legalEntry.foreign).map(([code, fr]) => {
-                                                        const label = COUNTRY_OPTIONS.find(c => c.code === code)?.label ?? fr.label ?? code
+                                                    {Object.entries(legalEntry.foreign).filter(([code]) => code !== 'OTHER').map(([code, fr]) => {
+                                                        const label = fr.label ?? code
                                                         return (
                                                             <TableRow key={code}>
                                                                 <TableCell>{label}</TableCell>
