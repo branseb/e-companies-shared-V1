@@ -27,7 +27,7 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
     return (
         <Dialog open onClose={onClose} maxWidth="md" fullWidth>
             <DialogTitle>Sadzby stravného</DialogTitle>
-            <DialogContent sx={{ px: 0, pt: 0 }}>
+            <DialogContent sx={{ px: 0, pt: 0, minHeight: 480 }}>
                 <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider', mb: 2 }}>
                     <Tab label="Zákonné sadzby" value="legal" />
                     <Tab label="Firemné sadzby" value="company" />
