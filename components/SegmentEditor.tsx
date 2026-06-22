@@ -237,12 +237,6 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             const entry = segRates(seg.date)
                             const fr = entry.foreign[country]
                             if (fr && fr.rate_12 > 0) return null
-                            const other = entry.foreign['OTHER']
-                            if (other && other.rate_12 > 0) return (
-                                <Alert severity="info" sx={{ py: 0, px: 1, fontSize: 11 }}>
-                                    Neznáma krajina — používa sadzbu <strong>Iná krajina</strong> ({other.rate_12} {other.currency}/deň)
-                                </Alert>
-                            )
                             return (
                                 <Alert severity="warning" sx={{ py: 0, px: 1, fontSize: 11 }}>
                                     Sadzba stravného pre <strong>{country}</strong> nie je nastavená.
