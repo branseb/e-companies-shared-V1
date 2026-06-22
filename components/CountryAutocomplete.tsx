@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Autocomplete, Box, TextField } from '@mui/material'
 import type { SxProps } from '@mui/material'
-import { COUNTRY_OPTIONS } from '../constants'
 import type { CountryOption } from '../types'
-
-const NEARBY_CODES = ['SK', 'CZ', 'AT', 'HU', 'PL', 'DE', 'UA']
 
 type Props = {
     value: string
@@ -42,15 +39,11 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx }: Props) => {
             inputValue={inputValue}
             onInputChange={(_, v) => setInputValue(v)}
             filterOptions={(options, { inputValue: q }) => {
-                if (!q.trim()) {
-                    return NEARBY_CODES
-                        .map(code => options.find(o => o.code === code) ?? COUNTRY_OPTIONS.find(o => o.code === code))
-                        .filter((o): o is CountryOption => !!o)
-                }
+                if (!q.trim()) return options
                 const ql = q.toLowerCase()
                 return options.filter(o =>
                     o.label.toLowerCase().includes(ql) || o.code.toLowerCase().includes(ql)
-                ).slice(0, 80)
+                )
             }}
             getOptionLabel={opt => typeof opt === 'string' ? opt : opt.label}
             isOptionEqualToValue={(opt, val) =>
