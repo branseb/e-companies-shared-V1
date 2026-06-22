@@ -65,8 +65,11 @@ export interface TravelOrderPdfInput {
     ratesHistory?: StravneRates | null
     includeAccounting?: boolean
     includeAdminFields?: boolean
+    showAccountingCodes?: boolean | null
+    showSlovom?: boolean | null
     applyAmortization?: boolean | null
     applyFuelCost?: boolean | null
+    isElectric?: boolean | null
 }
 
 // ── Pomocné funkcie ───────────────────────────────────────────────────────────
@@ -224,57 +227,58 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
 
     if (adm) {
         y += 1
-        label(doc, 'Spolucestujúci', L + 2, y + 1)
+        label(doc, 'Spolucestujúci', L + 2, y + 2.5)
         value(doc, d.collaborators ?? '', L + 2, y + 6)
         y += 9
         hLine(doc, y)
     }
 
     y += 1
-    normal(doc, 5.5); doc.text('Určený dopravný prostriedok (pri vlastnom vozidle EČV, priemerná spotreba PH podľa tech. preukazu)', L + 2, y + 1.5)
+    normal(doc, 5.5); doc.text('Určený dopravný prostriedok (pri vlastnom vozidle EČV, priemerná spotreba PH podľa tech. preukazu)', L + 2, y + 2.5)
     const transportLabel = [transportShort(d.transportType), d.ecv ? `EČV: ${d.ecv}` : null].filter(Boolean).join('  ')
     value(doc, transportLabel, L + 2, y + 6)
     vLine(doc, 165, y - 1, y + 9)
     if (d.fuelConsumption) {
-        label(doc, 'spotr.', 167, y + 1)
-        bold(doc, 8); doc.text(`${String(d.fuelConsumption).replace('.', ',')} l/100km`, 167, y + 6)
+        label(doc, 'spotr.', 167, y + 2.5)
+        const consumptionUnit = d.isElectric ? 'kWh/100km' : 'l/100km'
+        bold(doc, 8); doc.text(`${String(d.fuelConsumption).replace('.', ',')} ${consumptionUnit}`, 167, y + 6)
     }
     y += 9
     hLine(doc, y)
 
     if (d.includeAccounting !== false) {
         y += 1
-        label(doc, 'Predpokladaná čiastka výdavkov EUR', L + 2, y + 1)
+        label(doc, 'Predpokladaná čiastka výdavkov EUR', L + 2, y + 2.5)
         y += 9
         hLine(doc, y)
 
         y += 1
-        label(doc, 'Povolený preddavok EUR', L + 2, y + 1)
+        label(doc, 'Povolený preddavok EUR', L + 2, y + 2.5)
         if (d.advanceAmount) boldVal(doc, fmtN(d.advanceAmount), L + 2, y + 6)
         vLine(doc, 100, y - 1, y + 9)
-        label(doc, 'vyplatený dňa', 102, y + 1); hLine(doc, y + 7, 115, 155)
+        label(doc, 'vyplatený dňa', 102, y + 2.5); hLine(doc, y + 7, 115, 155)
         vLine(doc, 155, y - 1, y + 9)
-        label(doc, 'pokl.doklad číslo', 157, y + 1); hLine(doc, y + 7, 175, R)
+        label(doc, 'pokl.doklad číslo', 157, y + 2.5); hLine(doc, y + 7, 175, R)
         y += 9
         hLine(doc, y)
 
         y += 1
         vLine(doc, 100, y, y + 12)
-        label(doc, 'Podpis pokladníka', L + 2, y + 2)
+        label(doc, 'Podpis pokladníka', L + 2, y + 3)
         hLine(doc, y + 10, L + 2, 98)
-        label(doc, 'Dátum a podpis štatutárneho zástupcu', 102, y + 2)
+        label(doc, 'Dátum a podpis štatutárneho zástupcu', 102, y + 3)
         hLine(doc, y + 10, 102, R - 2)
         y += 12
         hLine(doc, y)
 
-        y += 3
+        y += 5
         bold(doc, 9)
         doc.text('Vyúčtovanie pracovnej cesty', L + 2, y)
         y += 6
         hLine(doc, y)
 
         y += 1
-        label(doc, 'Správa o výsledku pracovnej cesty bola podaná dňa', L + 2, y + 1)
+        label(doc, 'Správa o výsledku pracovnej cesty bola podaná dňa', L + 2, y + 2.5)
         hLine(doc, y + 5, L + 80, 170)
         label(doc, 'So spôsobom vykonania súhlasí', L + 2, y + 8)
         hLine(doc, y + 12, L + 55, 170)
@@ -285,55 +289,61 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
         y += 14
         hLine(doc, y)
 
-        y += 1
-        label(doc, 'Výdavkový - príjmový pokladničný doklad', L + 2, y + 1)
-        vLine(doc, 100, y, y + 8)
-        bold(doc, 7.5); doc.text('Účtovací predpis', 130, y + 3)
-        y += 8
-        hLine(doc, y)
+        if (d.showAccountingCodes !== false) {
+            y += 1
+            label(doc, 'Výdavkový - príjmový pokladničný doklad', L + 2, y + 2.5)
+            vLine(doc, 100, y, y + 8)
+            bold(doc, 7.5); doc.text('Účtovací predpis', 130, y + 4)
+            y += 8
+            hLine(doc, y)
 
-        const accCols = [L, 55, 78, 98, 122, 152, R]
-        const accLabels = ['č.', 'Má dať', 'Dal', 'Čiastka', 'Stredisko', 'Zákazka']
-        accLabels.forEach((lbl, i) => {
-            vLine(doc, accCols[i], y, y + 5)
-            label(doc, lbl, accCols[i] + 1, y + 3.5)
-        })
-        vLine(doc, R, y, y + 5)
-        y += 5
-        hLine(doc, y)
-        accCols.forEach(x => vLine(doc, x, y, y + 7))
-        vLine(doc, R, y, y + 7)
-        y += 7
-        hLine(doc, y)
+            const accCols = [L, 55, 78, 98, 122, 152, R]
+            const accLabels = ['č.', 'Má dať', 'Dal', 'Čiastka', 'Stredisko', 'Zákazka']
+            accLabels.forEach((lbl, i) => {
+                vLine(doc, accCols[i], y, y + 5)
+                label(doc, lbl, accCols[i] + 1, y + 3.5)
+            })
+            vLine(doc, R, y, y + 5)
+            y += 5
+            hLine(doc, y)
+            accCols.forEach(x => vLine(doc, x, y, y + 7))
+            vLine(doc, R, y, y + 7)
+            y += 7
+            hLine(doc, y)
+        }
 
         const sumRows = [
             { lbl: 'Účtovaná náhrada bola preskúmaná a upravená na', val: '', unit: 'EUR' },
             { lbl: 'Vyplatený preddavok',  val: fmtN(d.advanceAmount), unit: 'EUR' },
             { lbl: 'Doplatok- Preplatok',  val: '', unit: 'EUR' },
-            { lbl: 'Slovom', val: '', unit: '' },
         ]
+        if (d.showSlovom !== false) {
+            sumRows.push({ lbl: 'Slovom', val: '', unit: '' })
+        }
         sumRows.forEach((row, idx) => {
             y += 1
-            label(doc, row.lbl, L + 2, y + 1)
-            if (row.val) boldVal(doc, row.val, 95, y + 1)
-            if (row.unit) label(doc, row.unit, 105, y + 1)
-            if (idx === 3) label(doc, 'Poznámka o zaúčtovaní', 130, y + 1)
+            label(doc, row.lbl, L + 2, y + 2.5)
+            if (row.val) boldVal(doc, row.val, 95, y + 4)
+            if (row.unit) label(doc, row.unit, 105, y + 2.5)
+            if (d.showSlovom !== false && idx === sumRows.length - 1 && row.lbl === 'Slovom') label(doc, 'Poznámka o zaúčtovaní', 130, y + 2.5)
             y += 6
             hLine(doc, y)
         })
 
+        const sigSecH = 42
         const sigY = y + 2
         const sigCols = [L, 60, 118, 162, R]
         const sigLabels = ['Dátum a podpis zamestnanca,\nktorý upravil vyúčtovanie', 'Dátum a podpis príjemcu\n(preukaz totožnosti)', 'Dátum a podpis\npokladníka', 'Schválil (dátum a podpis)']
         sigLabels.forEach((lbl, i) => {
-            vLine(doc, sigCols[i], y, 289)
+            vLine(doc, sigCols[i], y, y + sigSecH)
             const lines = lbl.split('\n')
             lines.forEach((l, li) => label(doc, l, sigCols[i] + 1, sigY + li * 3.5))
             hLine(doc, sigY + 11, sigCols[i] + 1, sigCols[i + 1] - 1)
         })
-        vLine(doc, R, y, 289)
-        hLine(doc, 289, L, R)
-        rect(doc, L, 8, W, 281)
+        vLine(doc, R, y, y + sigSecH)
+        hLine(doc, y + sigSecH, L, R)
+        y += sigSecH
+        rect(doc, L, 8, W, y - 8)
     } else {
         rect(doc, L, 8, W, y - 8)
     }
@@ -483,13 +493,9 @@ const computeFinancials = (d: TravelOrderPdfInput): Financials => {
 
 const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: number) => {
     const L = 10, R = 200, W = R - L
-    const page2Top = startY ?? 8
-    let y = startY !== undefined ? startY + 2 : 10
-
-    bold(doc, 11)
-    doc.text('Vyúčtovanie pracovnej cesty', (L + R) / 2, y + 5, { align: 'center' })
-    y += 10
-    hLine(doc, y)
+    const PAGE_BOTTOM = 278
+    let currentPageStartY = startY ?? 8
+    let y = startY !== undefined ? startY + 2 : currentPageStartY
 
     const cols = {
         datum:    L,
@@ -500,11 +506,11 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         hod:      L + 78,
         pracHod:  L + 90,
         cestovne: L + 99,
-        stravne:  L + 110,
-        noclazne: L + 126,
-        nutne:    L + 139,
-        ine:      L + 151,
-        spolu:    L + 162,
+        stravne:  L + 112,  // cestovne 13mm
+        noclazne: L + 128,  // stravne 16mm
+        nutne:    L + 141,  // noclazne 13mm
+        ine:      L + 155,  // nutne 14mm
+        spolu:    L + 168,  // ine 13mm, spolu 22mm
         uprav:    R,
     }
 
@@ -517,8 +523,6 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
             .forEach(x => vLine(doc, x, yFrom, yTo))
     }
 
-    const h1 = y + 3
-    normal(doc, 5.5)
     const hdrs1 = [
         [cols.datum,    'Dátum'],
         [cols.odchod,   'ODCHOD-PRÍCHOD'],
@@ -534,24 +538,47 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         [cols.spolu,    'Spolu'],
     ] as [number, string][]
 
-    hdrs1.forEach(([x, text]) => {
-        text.split('\n').forEach((line, i) => doc.text(line, x + 1, h1 + i * 3.2))
-    })
+    const drawSegmentTableHeader = () => {
+        bold(doc, 11)
+        doc.text('Vyúčtovanie pracovnej cesty', (L + R) / 2, y + 5, { align: 'center' })
+        y += 10
+        hLine(doc, y)
+        const h1 = y + 3
+        normal(doc, 5.5)
+        hdrs1.forEach(([x, text]) => {
+            text.split('\n').forEach((line, i) => doc.text(line, x + 1, h1 + i * 3.2))
+        })
+        y += 18
+        hLine(doc, y)
+        hLine(doc, y - 5, cols.odchod, R)
+        normal(doc, 4.5)
+        ;[cols.cestovne, cols.stravne, cols.noclazne, cols.nutne, cols.ine, cols.spolu].forEach(x => {
+            doc.text('EUR', x + 1, y - 1)
+        })
+        doc.text('hod.',  cols.hodTime + 1, y - 1)
+        doc.text('skr.',  cols.doprava + 1, y - 1)
+        doc.text('km',    cols.km      + 1, y - 1)
+        doc.text('hod.',  cols.hod     + 1, y - 1)
+        doc.text('od-do', cols.pracHod + 1, y - 1)
+        drawColLines(h1 - 2, y)
+    }
 
-    y += 18
-    hLine(doc, y)
-    hLine(doc, y - 5, cols.odchod, R)
+    const addContinuationPage = () => {
+        rect(doc, L, currentPageStartY, W, y - currentPageStartY)
+        doc.addPage()
+        setupFonts(doc)
+        currentPageStartY = 8
+        y = currentPageStartY
+        drawSegmentTableHeader()
+    }
 
-    normal(doc, 4.5)
-    ;[cols.cestovne, cols.stravne, cols.noclazne, cols.nutne, cols.ine, cols.spolu].forEach(x => {
-        doc.text('EUR', x + 1, y - 1)
-    })
-    doc.text('hod.',  cols.hodTime + 1, y - 1)
-    doc.text('skr.',  cols.doprava + 1, y - 1)
-    doc.text('km',    cols.km      + 1, y - 1)
-    doc.text('hod.',  cols.hod     + 1, y - 1)
-    doc.text('od-do', cols.pracHod + 1, y - 1)
-    drawColLines(h1 - 2, y)
+    if (startY !== undefined && y + 32 > PAGE_BOTTOM) {
+        doc.addPage()
+        setupFonts(doc)
+        currentPageStartY = 8
+        y = currentPageStartY
+    }
+    drawSegmentTableHeader()
 
     type TRow = {
         date: string; dir: string; place: string; time: string;
@@ -621,6 +648,13 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                         ? ds.stravne / d.exchangeRates[ds.currency]! : ds.stravne)
                     : 0
                 const spoloCelkom = stravneEur + segExpTotalEur
+                // Ak stravné je v cudzej mene a nie je kurz (teda nekonvertovalo sa na EUR), ukážeme menu
+                const spoloCelkomCur = ds && ds.currency !== 'EUR'
+                    && !(d.exchangeRates?.[ds.currency] && (d.exchangeRates[ds.currency] ?? 0) > 0)
+                    ? ds.currency : undefined
+                const spoluStr = spoloCelkom > 0
+                    ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '')
+                    : stravneStr
 
                 dataPairs.push({
                     od: {
@@ -633,7 +667,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                         expNoclazne:  segNoclazne ? fmtExp(segNoclazne.total, segNoclazne.cur) : undefined,
                         expNutne:     segNutne    ? fmtExp(segNutne.total,    segNutne.cur)    : undefined,
                         expIne:       segIne > 0  ? fmtExp(segIne,            segIneCur)       : undefined,
-                        spolu:        spoloCelkom > 0 ? fmtSk(spoloCelkom) : stravneStr,
+                        spolu:        spoluStr,
                     },
                     pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : dispTime(seg.toTime, seg.fromTime), trans: '', km: '' },
                 })
@@ -672,6 +706,9 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
 
     for (const { od, pr } of dataPairs) {
         const pairH = rowH * 2
+        if (y + pairH > PAGE_BOTTOM) {
+            addContinuationPage()
+        }
         drawColLines(y, y + pairH)
 
         if (od?.date) { bold(doc, 5.5); doc.text(od.date, cols.datum + 1, y + pairH / 2 + 1) }
@@ -706,6 +743,14 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         normal(doc, 5); doc.text(`* stravné prepočítané podľa kurzu NBS${dateStr}`, L + 2, y + 2.5)
         y += 4
         hLine(doc, y)
+    }
+
+    if (y + 105 > PAGE_BOTTOM) {
+        rect(doc, L, currentPageStartY, W, y - currentPageStartY)
+        doc.addPage()
+        setupFonts(doc)
+        currentPageStartY = 8
+        y = currentPageStartY
     }
 
     const curEntries = Object.entries(f.stravneByCurrency).filter(([, v]) => v > 0)
@@ -770,9 +815,9 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     bold(doc, 8);   doc.text(String(f.km), L + 60, sY, { align: 'right' })
     normal(doc, 7); doc.text('km  ×', L + 62, sY)
     bold(doc, 8);   doc.text(d.fuelConsumption ? String(d.fuelConsumption).replace('.', ',') : '—', L + 78, sY)
-    normal(doc, 7); doc.text('l/100km  ×', L + 88, sY)
+    normal(doc, 7); doc.text(d.isElectric ? 'kWh/100km  ×' : 'l/100km  ×', L + 88, sY)
     bold(doc, 8);   doc.text(d.fuelPricePerLiter ? fmtSk(d.fuelPricePerLiter, 3) : '—', L + 115, sY, { align: 'right' })
-    normal(doc, 7); doc.text('EUR/l  =', L + 117, sY)
+    normal(doc, 7); doc.text(d.isElectric ? 'EUR/kWh  =' : 'EUR/l  =', L + 117, sY)
     bold(doc, 8);   doc.text(f.fuelCost > 0 ? fmtSk(f.fuelCost) : '—', R - 2, sY, { align: 'right' })
     y += 10
     hLine(doc, y)
@@ -868,7 +913,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
 
     y += sigSecH
     hLine(doc, y)
-    rect(doc, L, page2Top, W, y - page2Top)
+    rect(doc, L, currentPageStartY, W, y - currentPageStartY)
 }
 
 // ── Hlavná funkcia ────────────────────────────────────────────────────────────
@@ -886,6 +931,13 @@ export const generateTravelOrderPdf = (data: TravelOrderPdfInput): string => {
         doc.addPage()
         setupFonts(doc)
         drawPage2(doc, data, f)
+    }
+
+    const totalPages = doc.getNumberOfPages()
+    for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i)
+        normal(doc, 6)
+        doc.text(`${i} z ${totalPages}`, 105, 292, { align: 'center' })
     }
 
     return doc.output('datauristring').split(',')[1]

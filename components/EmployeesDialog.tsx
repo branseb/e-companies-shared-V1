@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import {
-    Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-    IconButton, Stack, TextField, Typography,
+    Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
+    FormControlLabel, IconButton, Stack, TextField, Typography,
 } from '@mui/material'
 import { Add, Delete, Edit } from '@mui/icons-material'
 import type { EmployeeRecord } from '../types'
 
 type EmpDialogProps = {
     employees: EmployeeRecord[]
-    onCreate: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultEcv?: string }) => Promise<void>
-    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultEcv?: string }) => Promise<void>
+    onCreate: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
+    onUpdate: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
     onDelete: (id: number) => Promise<void>
     onClose: () => void
 }
@@ -17,11 +17,11 @@ type EmpDialogProps = {
 const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: EmpDialogProps) => {
     const [editing, setEditing] = useState<EmployeeRecord | null>(null)
     const [adding, setAdding] = useState(false)
-    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultEcv: '' })
+    const [form, setForm] = useState({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '' })
     const [saving, setSaving] = useState(false)
 
-    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultEcv: '' }); setAdding(true) }
-    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '', defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '', defaultEcv: e.defaultEcv ?? '' }); setAdding(true) }
+    const openAdd = () => { setEditing(null); setForm({ name: '', address: '', defaultLocation: '', defaultFuelConsumption: '', defaultIsElectric: false, defaultEcv: '' }); setAdding(true) }
+    const openEdit = (e: EmployeeRecord) => { setEditing(e); setForm({ name: e.name, address: e.address ?? '', defaultLocation: e.defaultLocation ?? '', defaultFuelConsumption: e.defaultFuelConsumption != null ? String(e.defaultFuelConsumption) : '', defaultIsElectric: !!e.defaultIsElectric, defaultEcv: e.defaultEcv ?? '' }); setAdding(true) }
     const cancel = () => { setAdding(false); setEditing(null) }
 
     const handleSave = async () => {
@@ -33,6 +33,7 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                 address: form.address.trim() || undefined,
                 defaultLocation: form.defaultLocation.trim() || undefined,
                 defaultFuelConsumption: form.defaultFuelConsumption ? Number(form.defaultFuelConsumption) : undefined,
+                defaultIsElectric: form.defaultIsElectric || undefined,
                 defaultEcv: form.defaultEcv.trim().toUpperCase() || undefined,
             }
             if (editing) await onUpdate(editing.id, data)
@@ -58,7 +59,7 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                                         {[
                                             emp.address,
                                             emp.defaultLocation ? `📍 ${emp.defaultLocation}` : '',
-                                            emp.defaultFuelConsumption != null ? `⛽ ${emp.defaultFuelConsumption} l/100km` : '',
+                                            emp.defaultFuelConsumption != null ? `${emp.defaultIsElectric ? '⚡' : '⛽'} ${emp.defaultFuelConsumption} ${emp.defaultIsElectric ? 'kWh/100km' : 'l/100km'}` : '',
                                             emp.defaultEcv ? `🚗 ${emp.defaultEcv}` : '',
                                         ].filter(Boolean).join(' · ')}
                                     </Typography>
@@ -82,10 +83,16 @@ const EmployeesDialog = ({ employees, onCreate, onUpdate, onDelete, onClose }: E
                                 placeholder="napr. Košice"
                                 value={form.defaultLocation}
                                 onChange={e => setForm(f => ({ ...f, defaultLocation: e.target.value }))} />
-                            <TextField label="Predvolená spotreba (l/100km)" type="number" size="small" fullWidth
+                            <TextField
+                                label={form.defaultIsElectric ? 'Predvolená spotreba (kWh/100km)' : 'Predvolená spotreba (l/100km)'}
+                                type="number" size="small" fullWidth
                                 slotProps={{ htmlInput: { step: 0.1 } }}
                                 value={form.defaultFuelConsumption}
                                 onChange={e => setForm(f => ({ ...f, defaultFuelConsumption: e.target.value }))} />
+                            <FormControlLabel
+                                control={<Checkbox size="small" checked={form.defaultIsElectric}
+                                    onChange={e => setForm(f => ({ ...f, defaultIsElectric: e.target.checked }))} />}
+                                label="Elektromobil" />
                             <TextField label="EČV (evidenčné číslo vozidla)" size="small" fullWidth
                                 placeholder="napr. BA123AB"
                                 value={form.defaultEcv}

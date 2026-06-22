@@ -59,6 +59,7 @@ export type TravelOrder = {
     includeAdminFields?: boolean | null
     applyAmortization?: boolean | null
     applyFuelCost?: boolean | null
+    isElectric?: boolean | null
     advances?: Array<{ amount: number; currency: string }> | null
     useExchangeRates?: boolean | null
     exchangeRateDate?: string | null
@@ -75,6 +76,7 @@ export type EmployeeRecord = {
     address?: string | null
     defaultLocation?: string | null
     defaultFuelConsumption?: number | null
+    defaultIsElectric?: boolean | null
     defaultEcv?: string | null
 }
 
@@ -117,6 +119,16 @@ export {
   TYPE_LABELS, STATUS_COLOR, STATUS_LABEL, CHUNK_SIZE,
 } from './document'
 
+export type TravelPreferences = {
+    customPurposes: string[]
+    customPlaces: string[]
+}
+
+export const DEFAULT_TRAVEL_PREFERENCES: TravelPreferences = {
+    customPurposes: [],
+    customPlaces: [],
+}
+
 export type TravelOrdersWidgetProps = {
     orders: TravelOrder[]
     loading: boolean
@@ -128,9 +140,11 @@ export type TravelOrdersWidgetProps = {
     ratesHistory?: StravneRates | null
     onRatesChange?: (history: StravneRates) => void
     employees?: EmployeeRecord[]
-    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultEcv?: string }) => Promise<void>
-    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultEcv?: string }) => Promise<void>
+    onEmployeeCreate?: (data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
+    onEmployeeUpdate?: (id: number, data: { name: string; address?: string; defaultLocation?: string; defaultFuelConsumption?: number; defaultIsElectric?: boolean; defaultEcv?: string }) => Promise<void>
     onEmployeeDelete?: (id: number) => Promise<void>
+    preferences?: TravelPreferences | null
+    onPreferencesChange?: (prefs: TravelPreferences) => void
 }
 
 export type TravelOrderDetailPanelProps = {

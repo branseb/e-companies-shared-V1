@@ -116,7 +116,8 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                         )}
                         {r.fuelConsumption != null && (
                             <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 12 }}>
-                                {r.fuelConsumption} l/100km{r.fuelPricePerLiter ? ` @ ${r.fuelPricePerLiter} €/l` : ''}
+                                {r.fuelConsumption} {r.isElectric ? 'kWh/100km' : 'l/100km'}
+                                {r.fuelPricePerLiter ? ` @ ${r.fuelPricePerLiter} ${r.isElectric ? '€/kWh' : '€/l'}` : ''}
                             </Typography>
                         )}
                     </Stack>
@@ -127,7 +128,7 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                             {Object.entries(stravneMap).map(([c, amt]) => (
                                 <FinRow key={c} label={`Stravné${c !== 'EUR' ? ` (${c})` : ''}`} value={`${amt.toFixed(2)} ${c}`} />
                             ))}
-                            {fuelCost > 0 && <FinRow label="PHM" value={`${fuelCost.toFixed(2)} EUR`} />}
+                            {fuelCost > 0 && <FinRow label={r.isElectric ? 'El. energia' : 'PHM'} value={`${fuelCost.toFixed(2)} EUR`} />}
                             {amort > 0 && <FinRow label="Amortizácia" value={`${amort.toFixed(2)} EUR`} />}
 
                             <Divider sx={{ my: 0.75 }} />

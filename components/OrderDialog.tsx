@@ -1,25 +1,30 @@
 import { Fragment, useMemo, useRef, useState } from 'react'
 import {
-    AppBar, Autocomplete, Box, Button, Card, CardContent, Checkbox,
+    AppBar, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
     Chip, Dialog, Divider, FormControlLabel, IconButton, MenuItem,
-    Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Typography,
+    Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography,
 } from '@mui/material'
-import { Add, ArrowBack, CheckCircle, Delete, DirectionsCar, Edit, Explore, Person, Restaurant } from '@mui/icons-material'
-import type { TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord } from '../types'
-import { TRANSPORT_OPTIONS, STATUS_OPTIONS } from '../constants'
+import { Add, ArrowBack, CheckCircle, Delete, DirectionsCar, Edit, Explore, FlagOutlined, Person, Restaurant } from '@mui/icons-material'
+import type { TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
+import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
+import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS, COUNTRY_OPTIONS_EXTENDED } from '../constants'
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
     emptyTrip, fmtDate, calcSegStravne,
 } from '../helpers'
+import { calcOsmDistanceByCountry } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
+
+const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 type DialogProps = {
     initial: TravelOrderInput
     isNew: boolean
     ratesHistory: StravneRates
     employees: EmployeeRecord[]
+    preferences?: TravelPreferences
     onSave: (data: TravelOrderInput) => Promise<void>
     onClose: () => void
 }
@@ -162,9 +167,12 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
 
 // ── Main dialog ──────────────────────────────────────────────────────────────
 
-const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose }: DialogProps) => {
+const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onSave, onClose }: DialogProps) => {
+    const prefs = preferences ?? DEFAULT_TRAVEL_PREFERENCES
     const [form, setForm] = useState<TravelOrderInput>(initial)
     const [saving, setSaving] = useState(false)
+    const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
+    const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -196,6 +204,10 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
     }, [effectiveCarKm, form.applyAmortization, form.departureDate, ratesHistory])
 
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
+    const allExtendedCountries = useMemo(() => {
+        const codes = new Set(allCountries.map(c => c.code))
+        return [...allCountries, ...COUNTRY_OPTIONS_EXTENDED.filter(c => !codes.has(c.code))]
+    }, [allCountries])
 
     const foreignCurrencies = useMemo(() => {
         const countries = [...new Set(
@@ -285,22 +297,42 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
         set('trips', trips)
     }
 
-    const generateTripSegments = (ti: number) => {
+    const fetchKmByCountry = async (ti: number) => {
+        const trip = (form.trips ?? [])[ti]
+        if (!trip?.departureLocation?.trim() || !trip?.destination?.trim()) return
+        setLoadingKmTi(ti)
+        try {
+            const result = await calcOsmDistanceByCountry(trip.departureLocation.trim(), trip.destination.trim())
+            if (!result) return
+            const kmByCountry: Record<string, number> = {}
+            for (const { country, km } of result) kmByCountry[country.toUpperCase()] = km
+            const updated = trip.segments.map(seg => {
+                const c = (seg.country ?? trip.country ?? 'SK').toUpperCase()
+                const km = kmByCountry[c]
+                return km != null ? { ...seg, km } : seg
+            })
+            updateTrip(ti, 'segments', updated)
+        } finally {
+            setLoadingKmTi(null)
+        }
+    }
+
+    const generateTripSegments = async (ti: number) => {
         const trip = (form.trips ?? [])[ti]
         if (!trip) return
-        const trans   = form.transportType ?? 'car'
-        const depLoc  = trip.departureLocation ?? ''
-        const retLoc  = trip.returnLocation ?? depLoc
-        const depDate = trip.departureDate
-        const retDate = trip.returnDate ?? depDate
-        const depTime = trip.departureTime ?? ''
-        const dest    = trip.destination
-        const ctry    = allCountries.find(c => c.code === (trip.country ?? 'SK')) ?? allCountries[0]
-        const foreign = ctry.code !== 'SK'
-        const bp      = ctry.borderPrefix
+        const trans     = form.transportType ?? 'car'
+        const depLoc    = trip.departureLocation ?? ''
+        const retLoc    = trip.returnLocation ?? depLoc
+        const depDate   = trip.departureDate
+        const retDate   = trip.returnDate ?? depDate
+        const depTime   = trip.departureTime ?? ''
+        const dest      = trip.destination
+        const tripCountryCode = trip.country ?? 'SK'
+        const destCtry  = allExtendedCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
+        const foreign   = destCtry.code !== 'SK'
 
-        const mkSeg = (date: string, from: string, fromTime: string, to: string, toTime = '', segCountry = 'SK'): TripSegment =>
-            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km: null, stravne: null, country: segCountry, nbsDate: null })
+        const mkSeg = (date: string, from: string, fromTime: string, to: string, toTime = '', segCountry = 'SK', km: number | null = null): TripSegment =>
+            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km, stravne: null, country: segCountry, nbsDate: null })
 
         const d0 = new Date(depDate), d1 = new Date(retDate)
         const dayDiff = Math.round((d1.getTime() - d0.getTime()) / 86_400_000)
@@ -310,23 +342,65 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
             nd.setDate(nd.getDate() + d)
             midDays.push(nd.toISOString().split('T')[0])
         }
-        const midCtry = foreign ? ctry.code : 'SK'
-        const midSegs: TripSegment[] = midDays.map(date => mkSeg(date, dest, '00:00', dest, '00:00', midCtry))
-        const overnight = dayDiff >= 1
+        const overnight   = dayDiff >= 1
         const arrToTime   = overnight ? '00:00' : ''
         const retFromTime = overnight ? '00:00' : ''
+        const midSegs     = (ctry: string) => midDays.map(date => mkSeg(date, dest, '00:00', dest, '00:00', ctry))
 
-        const segs: TripSegment[] = foreign ? [
-            mkSeg(depDate, depLoc,         depTime,      `hr. SK-${bp}`, '',        'SK'),
-            mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          arrToTime, ctry.code),
-            ...midSegs,
-            mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, '',        ctry.code),
-            mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        '',        'SK'),
-        ] : [
-            mkSeg(depDate, depLoc, depTime,    dest,   arrToTime, 'SK'),
-            ...midSegs,
-            mkSeg(retDate, dest,   retFromTime, retLoc, '',       'SK'),
-        ]
+        let segs: TripSegment[]
+
+        if (foreign) {
+            // Zisti skutočné tranzitné krajiny cez OSM
+            let route: Array<{ country: string; km: number }> | null = null
+            if (depLoc.trim() && dest.trim()) {
+                setLoadingGenTi(ti)
+                try { route = await calcOsmDistanceByCountry(depLoc.trim(), dest.trim()) } catch { /* fallback */ }
+            }
+
+            if (route && route.length > 1) {
+                // Multi-krajinová trasa — vygeneruj správne hraničné úseky
+                const codes = route.map(r => r.country)
+                const hr = (a: string, b: string) => `hr. ${a}-${b}`
+
+                const outSegs = route.map(({ country, km }, i) =>
+                    mkSeg(depDate,
+                        i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
+                        i === 0 ? depTime : '',
+                        i === codes.length - 1 ? dest : hr(codes[i], codes[i + 1]),
+                        i === codes.length - 1 ? arrToTime : '',
+                        country, km))
+
+                const retSegs = [...route].reverse().map(({ country, km }, i) => {
+                    const rev = [...codes].reverse()
+                    return mkSeg(retDate,
+                        i === 0 ? dest : hr(rev[i - 1], rev[i]),
+                        i === 0 ? retFromTime : '',
+                        i === rev.length - 1 ? retLoc : hr(rev[i], rev[i + 1]),
+                        '',
+                        country, km)
+                })
+
+                segs = [...outSegs, ...midSegs(destCtry.code), ...retSegs]
+            } else {
+                // Fallback: jedna zahraničná krajina alebo OSM zlyhalo
+                const bp = destCtry.borderPrefix
+                const kmSK  = route?.find(r => r.country === 'SK')?.km ?? null
+                const kmDst = route?.find(r => r.country === destCtry.code)?.km ?? null
+                segs = [
+                    mkSeg(depDate, depLoc,         depTime,      `hr. SK-${bp}`, '',        'SK',          kmSK),
+                    mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          arrToTime, destCtry.code, kmDst),
+                    ...midSegs(destCtry.code),
+                    mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, '',        destCtry.code, kmDst),
+                    mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        '',        'SK',          kmSK),
+                ]
+            }
+        } else {
+            segs = [
+                mkSeg(depDate, depLoc, depTime,     dest,   arrToTime, 'SK'),
+                ...midSegs('SK'),
+                mkSeg(retDate, dest,   retFromTime, retLoc, '',        'SK'),
+            ]
+        }
 
         const trips = [...(form.trips ?? [])]
         trips[ti] = {
@@ -337,6 +411,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
             })),
         }
         set('trips', trips)
+        setLoadingGenTi(null)
     }
 
     const removeTrip = (ti: number) => {
@@ -417,8 +492,10 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                 if (val.defaultFuelConsumption != null) {
                                     set('fuelConsumption', val.defaultFuelConsumption)
                                     set('transportType', 'car')
+                                    set('isElectric', val.defaultIsElectric ?? null)
                                 } else {
                                     set('transportType', 'company_car')
+                                    set('isElectric', null)
                                 }
                                 set('ecv', val.defaultEcv ?? '')
                             }
@@ -509,32 +586,111 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                     </Stack>
                                 )}
 
-                                <TextField label="Cieľ cesty / miesto rokovania" required fullWidth
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={trip.destination}
-                                    onChange={e => updateTrip(ti, 'destination', e.target.value)} />
+                                <Autocomplete
+                                    freeSolo
+                                    fullWidth
+                                    options={[
+                                        ...prefs.customPlaces,
+                                        ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []).filter(c => !prefs.customPlaces.includes(c)),
+                                    ]}
+                                    inputValue={trip.destination}
+                                    onInputChange={(_e, val, reason) => {
+                                        if (reason === 'reset') return
+                                        updateTrip(ti, 'destination', val)
+                                    }}
+                                    onChange={(_e, val) => {
+                                        if (typeof val === 'string') updateTrip(ti, 'destination', val)
+                                    }}
+                                    filterOptions={(options, { inputValue }) => {
+                                        const q = norm(inputValue)
+                                        return options.filter(o =>
+                                            o !== trip.departureLocation &&
+                                            (q === '' || norm(o).includes(q))
+                                        )
+                                    }}
+                                    renderInput={params => (
+                                        <TextField {...params} label="Cieľ cesty / miesto rokovania" required fullWidth
+                                            slotProps={{
+                                                ...params.slotProps,
+                                                inputLabel: { ...(params.slotProps?.inputLabel as object), shrink: true },
+                                            }} />
+                                    )}
+                                />
 
                                 <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
-                                    <TextField select label="Krajina" fullWidth
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={trip.country ?? 'SK'}
-                                        onChange={e => updateTrip(ti, 'country', e.target.value)}>
-                                        {allCountries.map(c => (
-                                            <MenuItem key={c.code} value={c.code}>
-                                                {c.code !== 'SK' && c.currency !== 'EUR' ? `${c.label} (${c.currency})` : c.label}
-                                            </MenuItem>
-                                        ))}
-                                    </TextField>
-                                    <TextField label="Účel cesty" fullWidth
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={trip.purpose ?? ''}
-                                        onChange={e => updateTrip(ti, 'purpose', e.target.value)} />
+                                    <Autocomplete
+                                        fullWidth
+                                        freeSolo
+                                        options={allExtendedCountries}
+                                        getOptionLabel={o => typeof o === 'string' ? o : (o.currency !== 'EUR' ? `${o.label} (${o.currency})` : o.label)}
+                                        value={allExtendedCountries.find(c => c.code === (trip.country ?? 'SK')) ?? (trip.country ?? 'SK')}
+                                        onChange={(_e, val) => {
+                                            if (!val) return
+                                            updateTrip(ti, 'country', typeof val === 'string' ? val.toUpperCase().slice(0, 10) : val.code)
+                                        }}
+                                        onInputChange={(_e, val, reason) => {
+                                            if (reason === 'clear') updateTrip(ti, 'country', 'SK')
+                                        }}
+                                        isOptionEqualToValue={(o, v) => typeof v === 'string' ? o.code === v : o.code === v.code}
+                                        noOptionsText="Krajina nie je v zozname — zadajte kód ručne (napr. JP)"
+                                        renderInput={params => (
+                                            <TextField {...params} label="Krajina" fullWidth
+                                                slotProps={{ ...params.slotProps, inputLabel: { ...(params.slotProps?.inputLabel as object), shrink: true } }} />
+                                        )}
+                                    />
+                                    <Autocomplete
+                                        freeSolo
+                                        fullWidth
+                                        options={[
+                                            ...prefs.customPurposes,
+                                            ...PURPOSE_SUGGESTIONS.filter(p => !prefs.customPurposes.includes(p)),
+                                        ]}
+                                        inputValue={trip.purpose ?? ''}
+                                        onInputChange={(_e, val, reason) => {
+                                            if (reason === 'reset') return
+                                            updateTrip(ti, 'purpose', val)
+                                        }}
+                                        onChange={(_e, val) => {
+                                            if (typeof val === 'string') updateTrip(ti, 'purpose', val)
+                                        }}
+                                        filterOptions={(options, { inputValue }) => {
+                                            const q = norm(inputValue)
+                                            return options.filter(o => q === '' || norm(o).includes(q))
+                                        }}
+                                        renderInput={params => (
+                                            <TextField {...params} label="Účel cesty" fullWidth
+                                                slotProps={{
+                                                    ...params.slotProps,
+                                                    inputLabel: { ...(params.slotProps?.inputLabel as object), shrink: true },
+                                                }} />
+                                        )}
+                                    />
                                 </Stack>
 
-                                <TextField label="Miesto odchodu" fullWidth
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={trip.departureLocation ?? ''}
-                                    onChange={e => updateTrip(ti, 'departureLocation', e.target.value)} />
+                                <Autocomplete
+                                    freeSolo
+                                    fullWidth
+                                    options={CITY_SUGGESTIONS['SK']}
+                                    inputValue={trip.departureLocation ?? ''}
+                                    onInputChange={(_e, val, reason) => {
+                                        if (reason === 'reset') return
+                                        updateTrip(ti, 'departureLocation', val)
+                                    }}
+                                    onChange={(_e, val) => {
+                                        if (typeof val === 'string') updateTrip(ti, 'departureLocation', val)
+                                    }}
+                                    filterOptions={(options, { inputValue }) => {
+                                        const q = norm(inputValue)
+                                        return options.filter(o => q === '' || norm(o).includes(q))
+                                    }}
+                                    renderInput={params => (
+                                        <TextField {...params} label="Miesto odchodu" fullWidth
+                                            slotProps={{
+                                                ...params.slotProps,
+                                                inputLabel: { ...(params.slotProps?.inputLabel as object), shrink: true },
+                                            }} />
+                                    )}
+                                />
 
                                 <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
                                     <TextField label="Dátum odchodu" type="date" fullWidth
@@ -555,16 +711,34 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                 <TextField label="Dátum návratu" type="date" fullWidth
                                     slotProps={{ inputLabel: { shrink: true } }}
                                     value={trip.returnDate ?? ''}
+                                    error={!!trip.returnDate && trip.returnDate < trip.departureDate}
+                                    helperText={!!trip.returnDate && trip.returnDate < trip.departureDate ? 'Dátum návratu je pred dátumom odchodu' : undefined}
                                     onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
 
                                 {trip.destination && trip.departureDate && trip.returnDate && (
-                                    <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
-                                        onClick={() => {
-                                            if (trip.segments.length > 0 && !window.confirm('Prepočítať úseky? Existujúce úseky budú nahradené.')) return
-                                            generateTripSegments(ti)
-                                        }}>
-                                        {trip.segments.length === 0 ? 'Vygenerovať úseky (tam + pobyt + späť)' : 'Prepočítať úseky'}
-                                    </Button>
+                                    <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+                                        <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
+                                            disabled={loadingGenTi === ti}
+                                            startIcon={loadingGenTi === ti ? <CircularProgress size={14} /> : undefined}
+                                            onClick={async () => {
+                                                if (trip.segments.length > 0 && !window.confirm('Prepočítať úseky? Existujúce úseky budú nahradené.')) return
+                                                await generateTripSegments(ti)
+                                            }}>
+                                            {loadingGenTi === ti ? 'Generujem…' : trip.segments.length === 0 ? 'Vygenerovať úseky (tam + pobyt + späť)' : 'Prepočítať úseky'}
+                                        </Button>
+                                        {trip.segments.length > 0 && trip.departureLocation && (
+                                            <Tooltip title="Vzdialenosti vypočítané cez OpenStreetMap / OSRM. © OpenStreetMap contributors (ODbL)">
+                                                <span>
+                                                    <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
+                                                        disabled={loadingKmTi === ti}
+                                                        startIcon={loadingKmTi === ti ? <CircularProgress size={14} /> : <FlagOutlined />}
+                                                        onClick={() => fetchKmByCountry(ti)}>
+                                                        {loadingKmTi === ti ? 'Počítam…' : 'Navrhnúť km'}
+                                                    </Button>
+                                                </span>
+                                            </Tooltip>
+                                        )}
+                                    </Stack>
                                 )}
 
                                 <SegmentEditor
@@ -668,15 +842,24 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                                         checked={form.applyFuelCost !== false}
                                         onChange={e => set('applyFuelCost', e.target.checked ? null : false)} />}
                                     label="Uplatniť náhradu za spotrebu PHM" />
+                                <FormControlLabel
+                                    control={<Checkbox size="small"
+                                        checked={!!form.isElectric}
+                                        onChange={e => set('isElectric', e.target.checked ? true : null)} />}
+                                    label="Elektromobil (kWh)" />
                             </Stack>
 
                             {form.applyFuelCost !== false && (
                                 <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
-                                    <TextField label="Spotreba (l/100km)" type="number" fullWidth
+                                    <TextField
+                                        label={form.isElectric ? 'Spotreba (kWh/100km)' : 'Spotreba (l/100km)'}
+                                        type="number" fullWidth
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={form.fuelConsumption ?? ''}
                                         onChange={e => set('fuelConsumption', e.target.value ? Number(e.target.value) : undefined)} />
-                                    <TextField label="Cena PHM (€/l)" type="number" fullWidth
+                                    <TextField
+                                        label={form.isElectric ? 'Cena el. energie (€/kWh)' : 'Cena PHM (€/l)'}
+                                        type="number" fullWidth
                                         slotProps={{ inputLabel: { shrink: true } }}
                                         value={form.fuelPricePerLiter ?? ''}
                                         onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)} />
@@ -708,7 +891,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, onSave, onClose 
                             )}
                             {fuelCost != null && (
                                 <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-                                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>Spotreba PHM</Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>{form.isElectric ? 'Spotreba el. energie' : 'Spotreba PHM'}</Typography>
                                     <Typography variant="body2" sx={{ fontWeight: 700 }}>{fuelCost.toFixed(2)} EUR</Typography>
                                 </Stack>
                             )}

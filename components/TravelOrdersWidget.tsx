@@ -6,7 +6,8 @@ import {
     useMediaQuery, useTheme,
 } from '@mui/material'
 import { Add, ContentCopy, Delete, Edit, PictureAsPdf, Search } from '@mui/icons-material'
-import type { TravelOrder, TravelOrderInput, TravelOrdersWidgetProps } from '../types'
+import type { TravelOrder, TravelOrderInput, TravelOrdersWidgetProps, TravelPreferences } from '../types'
+import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { DEFAULT_STRAVNE_RATES, STATUS_MAP, STATUS_OPTIONS } from '../constants'
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
@@ -17,12 +18,14 @@ import {
 import OrderDialog from './OrderDialog'
 import EmployeesDialog from './EmployeesDialog'
 import RatesDialog from './RatesDialog'
+import PreferencesDialog from './PreferencesDialog'
 import { TravelOrderDetailPanel } from './TravelOrderDetailPanel'
 
 export const TravelOrdersWidget = ({
     orders, loading, onAdd, onUpdate, onDelete, onGeneratePdf, readOnly = false,
     ratesHistory: ratesProp, onRatesChange,
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
+    preferences: prefsProp, onPreferencesChange,
 }: TravelOrdersWidgetProps) => {
     const [dialog, setDialog] = useState<{ isNew: boolean; form: TravelOrderInput; id?: TravelOrder['id'] } | null>(null)
     const [expandedRows, setExpandedRows] = useState<Set<TravelOrder['id']>>(new Set())
@@ -33,6 +36,8 @@ export const TravelOrdersWidget = ({
     })
     const [ratesOpen, setRatesOpen] = useState(false)
     const [empOpen, setEmpOpen] = useState(false)
+    const [prefsOpen, setPrefsOpen] = useState(false)
+    const effectivePrefs: TravelPreferences = prefsProp ?? DEFAULT_TRAVEL_PREFERENCES
     const [filterStatus, setFilterStatus] = useState('all')
     const [search, setSearch] = useState('')
     const [statusMenu, setStatusMenu] = useState<{ anchor: HTMLElement; order: TravelOrder } | null>(null)
@@ -180,6 +185,9 @@ export const TravelOrdersWidget = ({
                     </Typography>
                     {onEmployeeCreate && (
                         <Button size="small" variant="outlined" onClick={() => setEmpOpen(true)}>Zamestnanci</Button>
+                    )}
+                    {onPreferencesChange && (
+                        <Button size="small" variant="outlined" onClick={() => setPrefsOpen(true)}>Predvolby</Button>
                     )}
                     {onRatesChange && (
                         <Button size="small" onClick={() => setRatesOpen(true)}>Sadzby</Button>
@@ -351,6 +359,7 @@ export const TravelOrdersWidget = ({
                     isNew={dialog.isNew}
                     ratesHistory={effectiveRates}
                     employees={employees}
+                    preferences={effectivePrefs}
                     onSave={handleSave}
                     onClose={() => setDialog(null)}
                 />
@@ -369,6 +378,13 @@ export const TravelOrdersWidget = ({
                     history={effectiveRates}
                     onSave={r => { onRatesChange?.(r); setRatesOpen(false) }}
                     onClose={() => setRatesOpen(false)}
+                />
+            )}
+            {prefsOpen && onPreferencesChange && (
+                <PreferencesDialog
+                    preferences={effectivePrefs}
+                    onSave={p => { onPreferencesChange(p); setPrefsOpen(false) }}
+                    onClose={() => setPrefsOpen(false)}
                 />
             )}
         </Box>

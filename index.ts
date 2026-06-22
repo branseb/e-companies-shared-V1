@@ -5,10 +5,10 @@ export type {
     TravelOrder, TravelOrderInput, TravelOrdersWidgetProps,
     TravelOrderDetailPanelProps,
     StravneRates, StravneRatesEntry, ForeignStravneRate, StravneMeals,
-    EmployeeRecord, TripSegment,
+    EmployeeRecord, TripSegment, TravelPreferences,
     UserRole, DocumentType, DocumentStatus, CompanyDocument,
 } from './types'
-export { TYPE_LABELS, STATUS_COLOR, STATUS_LABEL, CHUNK_SIZE } from './types'
+export { TYPE_LABELS, STATUS_COLOR, STATUS_LABEL, CHUNK_SIZE, DEFAULT_TRAVEL_PREFERENCES } from './types'
 
 export { generateTravelOrderPdf } from './pdf/travelOrderPdf'
 export type { TravelOrderPdfInput, TripPdf } from './pdf/travelOrderPdf'
