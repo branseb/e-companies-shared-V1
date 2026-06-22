@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import {
-    Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-    FormControlLabel, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead,
-    TableRow, Tabs, TextField, Tooltip, Typography,
+    Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+    FormControlLabel, IconButton, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead,
+    TableRow, Tabs, TextField, Typography,
 } from '@mui/material'
+import { Add, Delete } from '@mui/icons-material'
 import type { StravneRates, StravneRatesEntry, CompanyRateConfig } from '../types'
 import { fmtDate } from '../helpers'
 
@@ -196,53 +197,83 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
                                         />
                                     </Stack>
 
-                                    {entry && Object.keys(entry.foreign).length > 0 && (
-                                        <Box>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
-                                                Zahraničné stravné — firemné prepisy (prázdne = zákonná sadzba)
-                                            </Typography>
-                                            <Table size="small">
-                                                <TableHead>
-                                                    <TableRow>
-                                                        <TableCell>Krajina</TableCell>
-                                                        <TableCell sx={{ width: 60 }}>Mena</TableCell>
-                                                        <TableCell sx={{ width: 130 }}>Firemná sadzba (12+ hod.)</TableCell>
-                                                        <TableCell sx={{ width: 90, color: 'text.secondary', fontSize: 12 }}>Zákonná</TableCell>
-                                                    </TableRow>
-                                                </TableHead>
-                                                <TableBody>
-                                                    {Object.entries(entry.foreign).filter(([code]) => code !== 'OTHER').map(([code, fr]) => {
-                                                        const label = fr.label ?? code
-                                                        return (
-                                                            <TableRow key={code}>
-                                                                <TableCell>{label}</TableCell>
-                                                                <TableCell sx={{ color: 'text.secondary' }}>{fr.currency}</TableCell>
-                                                                <TableCell sx={{ p: 0.5 }}>
-                                                                    <Tooltip title="Prázdne = zákonná sadzba" placement="top">
-                                                                        <TextField
-                                                                            type="number" size="small" fullWidth
-                                                                            placeholder={fr.rate_12 ? String(fr.rate_12) : '—'}
-                                                                            value={company.foreign?.[code] ?? ''}
-                                                                            onChange={e => setCompany(c => ({
-                                                                                ...c,
-                                                                                foreign: {
-                                                                                    ...c.foreign,
-                                                                                    [code]: e.target.value ? Number(e.target.value) : null,
-                                                                                },
-                                                                            }))}
-                                                                        />
-                                                                    </Tooltip>
-                                                                </TableCell>
-                                                                <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>
-                                                                    {fr.rate_12 || '—'}
-                                                                </TableCell>
+                                    {entry && Object.keys(entry.foreign).length > 0 && (() => {
+                                        const overrides = Object.entries(company.foreign ?? {}).filter(([, v]) => v != null) as [string, number][]
+                                        const overrideCodes = new Set(overrides.map(([c]) => c))
+                                        const available = Object.entries(entry.foreign)
+                                            .filter(([code]) => code !== 'OTHER' && !overrideCodes.has(code))
+                                            .map(([code, fr]) => ({ code, label: fr.label ?? code }))
+                                            .sort((a, b) => a.label.localeCompare(b.label, 'sk'))
+                                        return (
+                                            <Box>
+                                                <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
+                                                    Zahraničné stravné — firemné prepisy
+                                                </Typography>
+                                                {overrides.length > 0 && (
+                                                    <Table size="small" sx={{ mb: 1 }}>
+                                                        <TableHead>
+                                                            <TableRow>
+                                                                <TableCell>Krajina</TableCell>
+                                                                <TableCell sx={{ width: 60 }}>Mena</TableCell>
+                                                                <TableCell sx={{ width: 130 }}>Firemná (12+ hod.)</TableCell>
+                                                                <TableCell sx={{ width: 80, color: 'text.secondary', fontSize: 12 }}>Zákonná</TableCell>
+                                                                <TableCell sx={{ width: 40 }} />
                                                             </TableRow>
-                                                        )
-                                                    })}
-                                                </TableBody>
-                                            </Table>
-                                        </Box>
-                                    )}
+                                                        </TableHead>
+                                                        <TableBody>
+                                                            {overrides.map(([code, val]) => {
+                                                                const fr = entry.foreign[code]
+                                                                return (
+                                                                    <TableRow key={code}>
+                                                                        <TableCell>{fr?.label ?? code}</TableCell>
+                                                                        <TableCell sx={{ color: 'text.secondary' }}>{fr?.currency}</TableCell>
+                                                                        <TableCell sx={{ p: 0.5 }}>
+                                                                            <TextField
+                                                                                type="number" size="small" fullWidth
+                                                                                value={val ?? ''}
+                                                                                onChange={e => setCompany(c => ({
+                                                                                    ...c,
+                                                                                    foreign: { ...c.foreign, [code]: e.target.value ? Number(e.target.value) : null },
+                                                                                }))}
+                                                                            />
+                                                                        </TableCell>
+                                                                        <TableCell sx={{ color: 'text.secondary', fontSize: 13 }}>{fr?.rate_12 || '—'}</TableCell>
+                                                                        <TableCell sx={{ p: 0.5 }}>
+                                                                            <IconButton size="small" onClick={() => setCompany(c => {
+                                                                                const f = { ...c.foreign }
+                                                                                delete f[code]
+                                                                                return { ...c, foreign: f }
+                                                                            })}>
+                                                                                <Delete fontSize="small" />
+                                                                            </IconButton>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                )
+                                                            })}
+                                                        </TableBody>
+                                                    </Table>
+                                                )}
+                                                <Autocomplete
+                                                    options={available}
+                                                    getOptionLabel={o => o.label}
+                                                    size="small"
+                                                    sx={{ maxWidth: 320 }}
+                                                    value={null}
+                                                    inputValue=""
+                                                    onChange={(_, opt) => {
+                                                        if (!opt) return
+                                                        setCompany(c => ({
+                                                            ...c,
+                                                            foreign: { ...c.foreign, [opt.code]: entry.foreign[opt.code]?.rate_12 ?? null },
+                                                        }))
+                                                    }}
+                                                    renderInput={params => (
+                                                        <TextField {...params} label="Pridať prepis krajiny" slotProps={{ input: { ...params.slotProps?.input, startAdornment: <Add fontSize="small" sx={{ mr: 0.5, color: 'text.secondary' }} /> } }} />
+                                                    )}
+                                                />
+                                            </Box>
+                                        )
+                                    })()}
                                 </Stack>
                             )}
                         </Stack>
