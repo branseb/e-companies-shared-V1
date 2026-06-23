@@ -1,7 +1,10 @@
 import { createTheme, type Theme } from '@mui/material'
 
-export const createAppTheme = (mode: 'light' | 'dark'): Theme =>
-    createTheme({
+export const createAppTheme = (mode: 'light' | 'dark'): Theme => {
+    const thumb      = mode === 'dark' ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)'
+    const thumbHover = mode === 'dark' ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.34)'
+
+    return createTheme({
         palette: {
             mode,
             primary:   { main: '#1c5fa3', light: '#4D8DC8', dark: '#0D3E6E' },
@@ -20,6 +23,19 @@ export const createAppTheme = (mode: 'light' | 'dark'): Theme =>
             button: { textTransform: 'none', fontWeight: 500 },
         },
         components: {
+            MuiCssBaseline: {
+                styleOverrides: {
+                    '*': { scrollbarWidth: 'thin', scrollbarColor: `${thumb} transparent` },
+                    '*::-webkit-scrollbar': { width: 6, height: 6 },
+                    '*::-webkit-scrollbar-button': { display: 'none', height: 0, width: 0 },
+                    '*::-webkit-scrollbar-track': { background: 'transparent' },
+                    '*::-webkit-scrollbar-thumb': { background: thumb, borderRadius: 99 },
+                    '*::-webkit-scrollbar-thumb:hover': { background: thumbHover },
+                    'input[type=number]': { MozAppearance: 'textfield' },
+                    'input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none' },
+                    'input[type=number]::-webkit-outer-spin-button': { WebkitAppearance: 'none' },
+                },
+            },
             MuiPaper: {
                 defaultProps: { elevation: 0, variant: 'outlined' },
                 styleOverrides: { root: { backgroundImage: 'none' } },
@@ -43,3 +59,4 @@ export const createAppTheme = (mode: 'light' | 'dark'): Theme =>
             },
         },
     })
+}
