@@ -31,9 +31,10 @@ export const createAppTheme = (mode: 'light' | 'dark'): Theme => {
                     '*::-webkit-scrollbar-track': { background: 'transparent' },
                     '*::-webkit-scrollbar-thumb': { background: thumb, borderRadius: 99 },
                     '*::-webkit-scrollbar-thumb:hover': { background: thumbHover },
-                    'input[type=number]': { MozAppearance: 'textfield' },
-                    'input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none' },
-                    'input[type=number]::-webkit-outer-spin-button': { WebkitAppearance: 'none' },
+                    'input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button': {
+                        opacity: 1,
+                        ...(mode === 'dark' ? { filter: 'invert(1) brightness(1.8)' } : {}),
+                    },
                 },
             },
             MuiPaper: {
