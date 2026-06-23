@@ -12,7 +12,7 @@ const FinRow = ({ label, value, bold = false }: { label: string; value: string; 
 )
 
 export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, onAddAttachment, onOpenAttachment, onDeleteAttachment }: TravelOrderDetailPanelProps) => {
-    const { rowCarKm, fuelCost, amort, stravneMap, totalsMap, hasSegs } = computeOrderFinancials(r, ratesHistory)
+    const { fuelCost, amort, stravneMap, totalsMap } = computeOrderFinancials(r, ratesHistory)
 
     const advanceMap: Record<string, number> = {}
     if (r.advances?.length) {
