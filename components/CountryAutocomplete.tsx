@@ -2,8 +2,6 @@ import { Autocomplete, Box, TextField } from '@mui/material'
 import type { SxProps } from '@mui/material'
 import type { CountryOption } from '../types'
 
-const NEARBY_CODES = ['SK', 'CZ', 'AT', 'HU', 'PL', 'DE', 'UA']
-
 type Props = {
     value: string
     allCountries: CountryOption[]
@@ -22,11 +20,7 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small'
             options={allCountries}
             value={selected}
             filterOptions={(opts, { inputValue: q }) => {
-                if (!q.trim()) {
-                    const nearby = NEARBY_CODES.map(code => opts.find(o => o.code === code)).filter((o): o is CountryOption => !!o)
-                    const rest = opts.filter(o => !NEARBY_CODES.includes(o.code)) // already sorted from getAllCountries
-                    return [...nearby, ...rest]
-                }
+                if (!q.trim()) return opts
                 const ql = q.toLowerCase()
                 return opts.filter(o =>
                     o.label.toLowerCase().includes(ql) || o.code.toLowerCase().includes(ql)

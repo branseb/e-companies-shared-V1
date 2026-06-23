@@ -7,11 +7,13 @@ export const getRatesForDate = (history: StravneRates, date: string): StravneRat
     return sorted.find(e => e.validFrom <= date) ?? sorted[sorted.length - 1]
 }
 
+const NEARBY_CODES = ['CZ', 'AT', 'HU', 'PL', 'DE', 'UA']
+
 export const getAllCountries = (history: StravneRates): CountryOption[] => {
     const sk = COUNTRY_OPTIONS.find(c => c.code === 'SK')!
     if (!history.length) return COUNTRY_OPTIONS.filter(c => c.code !== 'OTHER')
     const latest = getRatesForDate(history, new Date().toISOString().slice(0, 10))
-    const foreign = Object.entries(latest.foreign)
+    const all: CountryOption[] = Object.entries(latest.foreign)
         .filter(([code]) => code !== 'OTHER')
         .map(([code, fr]) => {
             const base = COUNTRY_OPTIONS.find(c => c.code === code)
@@ -22,6 +24,7 @@ export const getAllCountries = (history: StravneRates): CountryOption[] => {
                 borderPrefix: base?.borderPrefix ?? fr.borderPrefix ?? code,
             }
         })
-        .sort((a, b) => a.label.localeCompare(b.label, 'sk'))
-    return [sk, ...foreign]
+    const nearby = NEARBY_CODES.map(code => all.find(c => c.code === code)).filter((c): c is CountryOption => !!c)
+    const rest   = all.filter(c => !NEARBY_CODES.includes(c.code)).sort((a, b) => a.label.localeCompare(b.label, 'sk'))
+    return [sk, ...nearby, ...rest]
 }
