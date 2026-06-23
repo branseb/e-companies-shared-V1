@@ -898,7 +898,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                             {loadingGenTi === ti ? 'Generujem…' : trip.segments.length === 0 ? 'Vygenerovať úseky (tam + pobyt + späť)' : 'Prepočítať úseky'}
                                         </Button>
                                         {trip.segments.length > 0 && trip.departureLocation && (
-                                            <Tooltip title="Vzdialenosti vypočítané cez OpenStreetMap / OSRM. © OpenStreetMap contributors (ODbL)">
+                                            <Tooltip title="Vzdialenosti vypočítané cez OpenStreetMap / OSRM. © OpenStreetMap contributors (ODbL)" disableTouchListener>
                                                 <span>
                                                     <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
                                                         disabled={loadingKmTi === ti}
