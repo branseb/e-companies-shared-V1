@@ -2,7 +2,7 @@ import { jsPDF } from 'jspdf'
 import { robotoBase64 } from '../assets/robotoFont'
 import { roboto700Base64 } from '../assets/robotoBoldFont'
 import { calcDailyStravne, getRatesForDate } from '../helpers'
-import { DEFAULT_STRAVNE_RATES } from '../constants'
+import { DEFAULT_STRAVNE_RATES, getFuelTypeInfo } from '../constants'
 import type { StravneRates, TripSegment } from '../types'
 
 const DEFAULT_AMORTIZATION_RATE = 0.313
@@ -70,6 +70,7 @@ export interface TravelOrderPdfInput {
     applyAmortization?: boolean | null
     applyFuelCost?: boolean | null
     isElectric?: boolean | null
+    fuelType?: string | null
 }
 
 // ── Pomocné funkcie ───────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     vLine(doc, 165, y - 1, y + 9)
     if (d.fuelConsumption) {
         label(doc, 'spotr.', 167, y + 2.5)
-        const consumptionUnit = d.isElectric ? 'kWh/100km' : 'l/100km'
+        const consumptionUnit = getFuelTypeInfo(d.fuelType, d.isElectric).consumptionUnit
         bold(doc, 8); doc.text(`${String(d.fuelConsumption).replace('.', ',')} ${consumptionUnit}`, 167, y + 6)
     }
     y += 9
@@ -815,9 +816,9 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
     bold(doc, 8);   doc.text(String(f.km), L + 60, sY, { align: 'right' })
     normal(doc, 7); doc.text('km  ×', L + 62, sY)
     bold(doc, 8);   doc.text(d.fuelConsumption ? String(d.fuelConsumption).replace('.', ',') : '—', L + 78, sY)
-    normal(doc, 7); doc.text(d.isElectric ? 'kWh/100km  ×' : 'l/100km  ×', L + 88, sY)
+    normal(doc, 7); doc.text(`${getFuelTypeInfo(d.fuelType, d.isElectric).consumptionUnit}  ×`, L + 88, sY)
     bold(doc, 8);   doc.text(d.fuelPricePerLiter ? fmtSk(d.fuelPricePerLiter, 3) : '—', L + 115, sY, { align: 'right' })
-    normal(doc, 7); doc.text(d.isElectric ? 'EUR/kWh  =' : 'EUR/l  =', L + 117, sY)
+    normal(doc, 7); doc.text(`${getFuelTypeInfo(d.fuelType, d.isElectric).priceUnit}  =`, L + 117, sY)
     bold(doc, 8);   doc.text(f.fuelCost > 0 ? fmtSk(f.fuelCost) : '—', R - 2, sY, { align: 'right' })
     y += 10
     hLine(doc, y)

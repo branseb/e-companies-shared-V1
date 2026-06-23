@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useRef, useState } from 'react'
 import {
-    AppBar, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
-    Chip, Dialog, Divider, FormControlLabel, IconButton, MenuItem,
+    AppBar, Alert, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
+    Chip, Collapse, Dialog, Divider, FormControlLabel, IconButton, MenuItem,
     Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
-import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, Explore, FlagOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
+import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
 import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS } from '../constants'
@@ -13,6 +13,7 @@ import {
     getRatesForDate, getAllCountries,
     emptyTrip, fmtDate, calcSegStravne,
 } from '../helpers'
+import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmDistanceByCountry } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
@@ -29,8 +30,10 @@ type DialogProps = {
     onSave: (data: TravelOrderInput, attachmentTempId: string) => Promise<void>
     onClose: () => void
     onAddAttachment?: (tempId: string) => Promise<TravelOrderAttachment | null>
+    onAddAttachmentFromPath?: (tempId: string, filePath: string) => Promise<TravelOrderAttachment | null>
     onDeleteAttachment?: (tempId: string, id: string) => Promise<void>
     onOpenAttachment?: (tempId: string, id: string) => void
+    onReadAttachment?: (tempId: string, id: string) => Promise<{ buffer: ArrayBuffer; mimeType: string } | null>
 }
 
 const STEPS = ['Zamestnanec', 'Cesta', 'Doprava', 'Náhrady', 'Súhrn']
@@ -171,7 +174,7 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
 
 // ── Main dialog ──────────────────────────────────────────────────────────────
 
-const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, onSave, onClose, onAddAttachment, onDeleteAttachment, onOpenAttachment }: DialogProps) => {
+const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, onSave, onClose, onAddAttachment, onAddAttachmentFromPath, onDeleteAttachment, onOpenAttachment, onReadAttachment }: DialogProps) => {
     const isMobile = useMediaQuery('(max-width:599px)')
     const prefs = preferences ?? DEFAULT_TRAVEL_PREFERENCES
     const [form, setForm] = useState<TravelOrderInput>(initial)
@@ -183,6 +186,11 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const tempIdRef = useRef<string>(isNew ? crypto.randomUUID() : String(orderId ?? crypto.randomUUID()))
     const [attachments, setAttachments] = useState<TravelOrderAttachment[]>([])
     const [addingAttachment, setAddingAttachment] = useState(false)
+    const [dragOver, setDragOver] = useState(false)
+    const [validationErrors, setValidationErrors] = useState<string[]>([])
+    const [collaboratorInput, setCollaboratorInput] = useState('')
+    const [previewState, setPreviewState] = useState<{ url: string; mimeType: string; name: string } | null>(null)
+    const [collapsedTrips, setCollapsedTrips] = useState<Set<number>>(new Set())
 
     const set = <K extends keyof TravelOrderInput>(field: K, value: TravelOrderInput[K]) =>
         setForm(f => ({ ...f, [field]: value }))
@@ -286,6 +294,62 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         }
         return result
     }, [totalsByCurrency, advanceByCurrency])
+
+    // ── Collaborators ────────────────────────────────────────────────────────
+
+    const collaboratorList = useMemo(() =>
+        form.collaborators?.split(',').map(s => s.trim()).filter(Boolean) ?? [],
+    [form.collaborators])
+
+    const addCollaborator = (name: string) => {
+        const trimmed = name.trim()
+        if (!trimmed || collaboratorList.includes(trimmed)) { setCollaboratorInput(''); return }
+        set('collaborators', [...collaboratorList, trimmed].join(', '))
+        setCollaboratorInput('')
+    }
+
+    const removeCollaborator = (name: string) => {
+        const next = collaboratorList.filter(n => n !== name).join(', ')
+        set('collaborators', next || null)
+    }
+
+    // ── Validation ───────────────────────────────────────────────────────────
+
+    const validateForm = (): string[] => {
+        const errors: string[] = []
+        if (!form.employee.trim()) errors.push('Chýba meno zamestnanca.')
+        if (!form.trips?.length) errors.push('Musí byť zadaná aspoň jedna cesta.')
+        if (!(form.trips?.[0]?.destination?.trim())) errors.push('Chýba cieľ cesty.')
+        for (const [i, trip] of (form.trips ?? []).entries()) {
+            if (trip.returnDate && trip.returnDate < trip.departureDate)
+                errors.push(`Cesta ${i + 1}: dátum návratu (${trip.returnDate}) je pred dátumom odchodu (${trip.departureDate}).`)
+        }
+        if (form.transportType === 'car' && !form.ecv?.trim())
+            errors.push('Vlastné auto (AUV) vyžaduje vyplnené EČV.')
+        if ((form.trips ?? []).flatMap(t => t.segments).some(s => (s.km ?? 0) < 0))
+            errors.push('Km nesmú byť záporné.')
+        if ((form.advanceAmount ?? 0) < 0 || (form.advances ?? []).some(a => a.amount < 0))
+            errors.push('Záloha nesmie byť záporná.')
+        return errors
+    }
+
+    // ── Attachment preview ───────────────────────────────────────────────────
+
+    const openAttachmentPreview = async (att: TravelOrderAttachment) => {
+        if (!onReadAttachment) { onOpenAttachment?.(tempIdRef.current, att.id); return }
+        const result = await onReadAttachment(tempIdRef.current, att.id)
+        if (!result) { onOpenAttachment?.(tempIdRef.current, att.id); return }
+        const isPreviewable = result.mimeType.startsWith('image/') || result.mimeType === 'application/pdf'
+        if (!isPreviewable) { onOpenAttachment?.(tempIdRef.current, att.id); return }
+        const blob = new Blob([result.buffer], { type: result.mimeType })
+        const url = URL.createObjectURL(blob)
+        setPreviewState({ url, mimeType: result.mimeType, name: att.filename })
+    }
+
+    const closePreview = () => {
+        if (previewState) URL.revokeObjectURL(previewState.url)
+        setPreviewState(null)
+    }
 
     // ── Trip handlers ────────────────────────────────────────────────────────
 
@@ -437,7 +501,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // ── Save ─────────────────────────────────────────────────────────────────
 
     const handleSave = async (statusOverride?: string) => {
-        if (!form.employee.trim() || !form.trips?.length || !form.trips[0].destination.trim()) return
+        const errors = validateForm()
+        if (errors.length > 0) { setValidationErrors(errors); return }
+        setValidationErrors([])
         setSaving(true)
         const advanceAmount = form.advances?.length
             ? (form.advances.find(a => (a.currency || 'EUR') === 'EUR')?.amount ?? form.advances[0]?.amount ?? 0)
@@ -446,8 +512,8 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             ...form,
             advanceAmount,
             status: statusOverride ?? form.status,
-            departureDate: form.trips[0].departureDate || form.departureDate,
-            destination:   form.trips.map(t => t.destination).join(' / '),
+            departureDate: form.trips![0].departureDate || form.departureDate,
+            destination:   form.trips!.map(t => t.destination).join(' / '),
         }
         try { await onSave(saved, tempIdRef.current) } finally { setSaving(false) }
     }
@@ -467,6 +533,25 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         if (!onDeleteAttachment) return
         await onDeleteAttachment(tempIdRef.current, id)
         setAttachments(prev => prev.filter(a => a.id !== id))
+    }
+
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setDragOver(false)
+        if (!onAddAttachmentFromPath) return
+        const files = Array.from(e.dataTransfer.files)
+        for (const file of files) {
+            const filePath = (file as File & { path?: string }).path
+            if (!filePath) continue
+            setAddingAttachment(true)
+            try {
+                const att = await onAddAttachmentFromPath(tempIdRef.current, filePath)
+                if (att) setAttachments(prev => [...prev, att])
+            } finally {
+                setAddingAttachment(false)
+            }
+        }
     }
 
     const goTo = (step: number) => {
@@ -514,9 +599,11 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     set('fuelConsumption', val.defaultFuelConsumption)
                                     set('transportType', 'car')
                                     set('isElectric', val.defaultIsElectric ?? null)
+                                    set('fuelType', val.defaultIsElectric ? 'electric' : null)
                                 } else {
                                     set('transportType', 'company_car')
                                     set('isElectric', null)
+                                    set('fuelType', null)
                                 }
                                 set('ecv', val.defaultEcv ?? '')
                             }
@@ -533,6 +620,39 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         slotProps={{ inputLabel: { shrink: true } }}
                         value={form.employeeAddress ?? ''}
                         onChange={e => set('employeeAddress', e.target.value)} />
+
+                    <Box>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>
+                            Spolucestujúci
+                        </Typography>
+                        {collaboratorList.length > 0 && (
+                            <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', mb: 0.75 }}>
+                                {collaboratorList.map(name => (
+                                    <Chip key={name} label={name} size="small" onDelete={() => removeCollaborator(name)} />
+                                ))}
+                            </Stack>
+                        )}
+                        <Autocomplete
+                            freeSolo
+                            options={employees
+                                .map(e => e.name)
+                                .filter(n => n !== form.employee && !collaboratorList.includes(n))}
+                            inputValue={collaboratorInput}
+                            onInputChange={(_, val, reason) => { if (reason !== 'reset') setCollaboratorInput(val) }}
+                            onChange={(_, val) => { if (typeof val === 'string' && val.trim()) addCollaborator(val) }}
+                            renderInput={params => (
+                                <TextField {...params} size="small" placeholder="Pridať spolucestujúceho…"
+                                    slotProps={{ inputLabel: { shrink: true } }}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && collaboratorInput.trim()) {
+                                            e.preventDefault()
+                                            addCollaborator(collaboratorInput)
+                                        }
+                                    }}
+                                />
+                            )}
+                        />
+                    </Box>
                 </Stack>
             </CardContent>
         </Card>
@@ -577,35 +697,57 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 const depLabel = trip.departureLocation || 'Odchod'
                 const destLabel = trip.destination || 'Cieľ'
 
+                const isCollapsed = collapsedTrips.has(ti)
+                const toggleCollapse = () => setCollapsedTrips(prev => {
+                    const next = new Set(prev)
+                    if (next.has(ti)) next.delete(ti); else next.add(ti)
+                    return next
+                })
+
                 return (
                     <Card key={ti} sx={sxCard}>
                         <CardContent>
-                            {/* Route chip */}
+                            {/* Route header */}
                             <Box sx={{ bgcolor: 'primary.main', borderRadius: '12px', p: 1.75, mb: 2.5 }}>
-                                <Typography variant="caption" sx={{ opacity: 0.8, display: 'block', mb: 0.25, color: 'primary.contrastText' }}>
-                                    Trasa {(form.trips ?? []).length > 1 ? ti + 1 : ''}
-                                </Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.2, color: 'primary.contrastText' }}>
-                                    {depLabel} → {destLabel}
-                                </Typography>
-                                {trip.departureDate && (
-                                    <Typography variant="caption" sx={{ opacity: 0.75, mt: 0.5, display: 'block', color: 'primary.contrastText' }}>
-                                        {fmtDate(trip.departureDate)}
-                                        {trip.returnDate && trip.returnDate !== trip.departureDate
-                                            ? ` — ${fmtDate(trip.returnDate)}` : ''}
-                                    </Typography>
-                                )}
-                            </Box>
-
-                            <Stack sx={{ gap: 2 }}>
-                                {(form.trips ?? []).length > 1 && (
-                                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Cesta {ti + 1}</Typography>
-                                        <IconButton size="small" color="error" onClick={() => removeTrip(ti)}>
-                                            <Delete fontSize="small" />
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                                    <Box onClick={toggleCollapse} sx={{ flex: 1, cursor: 'pointer' }}>
+                                        <Typography variant="caption" sx={{ opacity: 0.8, display: 'block', mb: 0.25, color: 'primary.contrastText' }}>
+                                            Trasa {(form.trips ?? []).length > 1 ? ti + 1 : ''}
+                                        </Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.2, color: 'primary.contrastText' }}>
+                                            {depLabel} → {destLabel}
+                                        </Typography>
+                                        {trip.departureDate && (
+                                            <Typography variant="caption" sx={{ opacity: 0.75, mt: 0.5, display: 'block', color: 'primary.contrastText' }}>
+                                                {fmtDate(trip.departureDate)}
+                                                {trip.returnDate && trip.returnDate !== trip.departureDate
+                                                    ? ` — ${fmtDate(trip.returnDate)}` : ''}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                    <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5, ml: 1, flexShrink: 0 }}>
+                                        {(form.trips ?? []).length > 1 && (
+                                            <Button size="small" startIcon={<Delete fontSize="small" />}
+                                                onClick={e => { e.stopPropagation(); removeTrip(ti) }}
+                                                sx={{
+                                                    textTransform: 'none', lineHeight: 1,
+                                                    color: '#ff6b6b',
+                                                    '& .MuiButton-startIcon': { marginRight: '4px', display: 'flex', alignItems: 'center' },
+                                                    '&:hover': { bgcolor: 'rgba(255,255,255,0.15)', color: '#ff4444' },
+                                                }}>
+                                                Zmazať
+                                            </Button>
+                                        )}
+                                        <IconButton size="small" onClick={toggleCollapse}
+                                            sx={{ color: 'primary.contrastText' }}>
+                                            {isCollapsed ? <ExpandMore /> : <ExpandLess />}
                                         </IconButton>
                                     </Stack>
-                                )}
+                                </Box>
+                            </Box>
+
+                            <Collapse in={!isCollapsed}>
+                            <Stack sx={{ gap: 2 }}>
 
                                 <Autocomplete
                                     freeSolo
@@ -736,6 +878,14 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     helperText={!!trip.returnDate && trip.returnDate < trip.departureDate ? 'Dátum návratu je pred dátumom odchodu' : undefined}
                                     onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
 
+                                {trip.departureDate && trip.returnDate && trip.returnDate >= trip.departureDate && (() => {
+                                    const days = Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departureDate).getTime()) / 86_400_000) + 1
+                                    return (
+                                        <Chip size="small" variant="outlined" color="info" sx={{ alignSelf: 'flex-start' }}
+                                            label={`Trvanie: ${days} ${days === 1 ? 'deň' : days < 5 ? 'dni' : 'dní'}`} />
+                                    )
+                                })()}
+
                                 {trip.destination && trip.departureDate && trip.returnDate && (
                                     <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
                                         <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
@@ -798,6 +948,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     </Stack>
                                 )}
                             </Stack>
+                            </Collapse>
                         </CardContent>
                     </Card>
                 )
@@ -852,7 +1003,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             Náhrada za vozidlo
                         </Typography>
                         <Stack sx={{ gap: 2, mt: 1.5 }}>
-                            <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1, flexWrap: 'wrap' }}>
+                            <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1, flexWrap: 'wrap', alignItems: { sm: 'center' } }}>
                                 <FormControlLabel
                                     control={<Checkbox size="small"
                                         checked={form.applyAmortization !== false}
@@ -862,30 +1013,41 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     control={<Checkbox size="small"
                                         checked={form.applyFuelCost !== false}
                                         onChange={e => set('applyFuelCost', e.target.checked ? null : false)} />}
-                                    label="Uplatniť náhradu za spotrebu PHM" />
-                                <FormControlLabel
-                                    control={<Checkbox size="small"
-                                        checked={!!form.isElectric}
-                                        onChange={e => set('isElectric', e.target.checked ? true : null)} />}
-                                    label="Elektromobil (kWh)" />
+                                    label="Uplatniť náhradu za spotrebu" />
                             </Stack>
 
-                            {form.applyFuelCost !== false && (
-                                <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
-                                    <TextField
-                                        label={form.isElectric ? 'Spotreba (kWh/100km)' : 'Spotreba (l/100km)'}
-                                        type="number" fullWidth
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={form.fuelConsumption ?? ''}
-                                        onChange={e => set('fuelConsumption', e.target.value ? Number(e.target.value) : undefined)} />
-                                    <TextField
-                                        label={form.isElectric ? 'Cena el. energie (€/kWh)' : 'Cena PHM (€/l)'}
-                                        type="number" fullWidth
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={form.fuelPricePerLiter ?? ''}
-                                        onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)} />
-                                </Stack>
-                            )}
+                            <TextField select label="Druh paliva" sx={{ maxWidth: 200 }}
+                                slotProps={{ inputLabel: { shrink: true } }}
+                                value={form.fuelType ?? (form.isElectric ? 'electric' : 'petrol')}
+                                onChange={e => {
+                                    const ft = e.target.value
+                                    set('fuelType', ft)
+                                    set('isElectric', ft === 'electric' ? true : null)
+                                }}>
+                                {FUEL_TYPE_OPTIONS.map(o => (
+                                    <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                                ))}
+                            </TextField>
+
+                            {form.applyFuelCost !== false && (() => {
+                                const fi = getFuelTypeInfo(form.fuelType, form.isElectric)
+                                return (
+                                    <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
+                                        <TextField
+                                            label={`Spotreba (${fi.consumptionUnit})`}
+                                            type="number" fullWidth
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={form.fuelConsumption ?? ''}
+                                            onChange={e => set('fuelConsumption', e.target.value ? Number(e.target.value) : undefined)} />
+                                        <TextField
+                                            label={`Cena (${fi.priceUnit})`}
+                                            type="number" fullWidth
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={form.fuelPricePerLiter ?? ''}
+                                            onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)} />
+                                    </Stack>
+                                )
+                            })()}
                         </Stack>
                     </CardContent>
                 </Card>
@@ -940,15 +1102,6 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         Stravné
                     </Typography>
                     <Stack sx={{ gap: 2.5, mt: 1.5 }}>
-                        <TextField label="Násobok stravného" type="number" sx={{ maxWidth: 180 }}
-                            value={form.stravneMultiplier ?? 1}
-                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { step: 0.05, min: 1 } }}
-                            helperText="1 = zákonné minimum, napr. 1.5 = 150 %"
-                            onChange={e => {
-                                const v = Number(e.target.value)
-                                set('stravneMultiplier', v && v !== 1 ? v : null)
-                            }}
-                        />
                         <Box>
                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
                                 Poskytnuté bezplatne:
@@ -1104,6 +1257,18 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
         return (
             <>
+                {/* Validation errors */}
+                {validationErrors.length > 0 && (
+                    <Alert severity="error" sx={{ mb: 2, borderRadius: '14px' }}
+                        onClose={() => setValidationErrors([])}>
+                        <Stack sx={{ gap: 0.25 }}>
+                            {validationErrors.map((err, i) => (
+                                <Typography key={i} variant="body2">{err}</Typography>
+                            ))}
+                        </Stack>
+                    </Alert>
+                )}
+
                 {/* Success header */}
                 <Box sx={{ textAlign: 'center', pt: 3, pb: 2.5 }}>
                     <Box sx={{
@@ -1218,6 +1383,31 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     </span>
                                 </Tooltip>
                             </Stack>
+
+                            {/* Drop zone */}
+                            {onAddAttachmentFromPath && (
+                                <Box
+                                    onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                                    onDragLeave={() => setDragOver(false)}
+                                    onDrop={handleDrop}
+                                    sx={{
+                                        border: '2px dashed',
+                                        borderColor: dragOver ? 'primary.main' : 'divider',
+                                        borderRadius: '12px',
+                                        p: 1.5,
+                                        mb: 1.5,
+                                        textAlign: 'center',
+                                        bgcolor: dragOver ? 'primary.50' : 'transparent',
+                                        transition: 'all 0.2s',
+                                        cursor: 'default',
+                                    }}
+                                >
+                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                        Presuňte súbory sem
+                                    </Typography>
+                                </Box>
+                            )}
+
                             {attachments.length === 0 ? (
                                 <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 13, fontStyle: 'italic' }}>
                                     Žiadne prílohy (blok od tankovania, faktúra z hotela, mýto…)
@@ -1229,8 +1419,8 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                             <InsertDriveFile sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />
                                             <Typography
                                                 variant="body2"
-                                                sx={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onOpenAttachment ? 'pointer' : 'default', '&:hover': onOpenAttachment ? { color: 'primary.main' } : {} }}
-                                                onClick={() => onOpenAttachment?.(tempIdRef.current, att.id)}
+                                                sx={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', '&:hover': { color: 'primary.main' } }}
+                                                onClick={() => openAttachmentPreview(att)}
                                             >
                                                 {att.filename}
                                             </Typography>
@@ -1339,6 +1529,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // ── Render ───────────────────────────────────────────────────────────────
 
     return (
+    <>
         <Dialog
             open
             onClose={onClose}
@@ -1452,6 +1643,32 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             {/* ── Footer ── */}
             <FooterButtons />
         </Dialog>
+
+        {/* ── Preview dialog ── */}
+        {previewState && (
+            <Dialog open onClose={closePreview} maxWidth="lg" fullWidth
+                slotProps={{ paper: { sx: { height: '90vh', borderRadius: '16px' } } }}>
+                <AppBar position="sticky" color="default" elevation={0}
+                    sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Toolbar sx={{ gap: 1 }}>
+                        <IconButton edge="start" onClick={closePreview}><ArrowBack /></IconButton>
+                        <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600, fontSize: 15 }} noWrap>
+                            {previewState.name}
+                        </Typography>
+                    </Toolbar>
+                </AppBar>
+                <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 0 }}>
+                    {previewState.mimeType === 'application/pdf' ? (
+                        <embed src={previewState.url} type="application/pdf" width="100%" height="100%" style={{ flex: 1, minHeight: 0 }} />
+                    ) : (
+                        <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+                            <img src={previewState.url} alt={previewState.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        </Box>
+                    )}
+                </Box>
+            </Dialog>
+        )}
+    </>
     )
 }
 

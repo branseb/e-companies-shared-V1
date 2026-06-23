@@ -26,7 +26,8 @@ export const TravelOrdersWidget = ({
     companyRates, onCompanyRatesChange,
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
     preferences: prefsProp, onPreferencesChange,
-    onGetAttachments, onAddAttachment, onOpenAttachment, onDeleteAttachment, onMigrateAttachments,
+    onGetAttachments, onAddAttachment, onAddAttachmentFromPath, onOpenAttachment, onDeleteAttachment, onMigrateAttachments,
+    onReadAttachment,
 }: TravelOrdersWidgetProps) => {
     const [dialog, setDialog] = useState<{ isNew: boolean; form: TravelOrderInput; id?: TravelOrder['id'] } | null>(null)
     const [expandedRows, setExpandedRows] = useState<Set<TravelOrder['id']>>(new Set())
@@ -122,6 +123,20 @@ export const TravelOrdersWidget = ({
             )
         })
 
+    // ── Cost summary ──────────────────────────────────────────────────────────
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
+
+    const sumOrdersEur = (rows: TravelOrder[]) =>
+        rows.reduce((acc, r) => acc + (computeOrderFinancials(r, effectiveRates).totalsMap['EUR'] ?? 0), 0)
+
+    const currentMonthTotal = sumOrdersEur(filteredOrders.filter(r =>
+        (r.trips?.[0]?.departureDate ?? r.departureDate ?? '').slice(0, 7) === currentMonth))
+    const prevMonthTotal = sumOrdersEur(filteredOrders.filter(r =>
+        (r.trips?.[0]?.departureDate ?? r.departureDate ?? '').slice(0, 7) === prevMonth))
+
     const count = orders.length
     const countLabel = count === 1 ? 'príkaz' : count < 5 ? 'príkazy' : 'príkazov'
 
@@ -194,21 +209,36 @@ export const TravelOrdersWidget = ({
             </Stack>
 
             {orders.length > 0 && (
-                <Stack direction="row" sx={{ mb: 2, gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <TextField
-                        size="small"
-                        placeholder="Hľadať..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }}
-                        sx={{ minWidth: 180 }}
-                    />
-                    <ToggleButtonGroup size="small" exclusive value={filterStatus} onChange={(_, v) => v && setFilterStatus(v)}>
+                <Stack sx={{ mb: 2, gap: 1 }}>
+                    <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <TextField
+                            size="small"
+                            placeholder="Hľadať..."
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }}
+                            sx={{ minWidth: 180 }}
+                        />
+                    </Stack>
+                    <ToggleButtonGroup size="small" exclusive value={filterStatus} onChange={(_, v) => v && setFilterStatus(v)} sx={{ flexWrap: 'wrap' }}>
                         <ToggleButton value="all">Všetky</ToggleButton>
                         {STATUS_OPTIONS.map(o => (
                             <ToggleButton key={o.value} value={o.value}>{o.label}</ToggleButton>
                         ))}
                     </ToggleButtonGroup>
+                    {/* Cost summary */}
+                    {(currentMonthTotal > 0 || prevMonthTotal > 0) && (
+                        <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
+                            {currentMonthTotal > 0 && (
+                                <Chip size="small" color="primary" variant="outlined"
+                                    label={`Tento mesiac: ${currentMonthTotal.toFixed(2)} EUR`} />
+                            )}
+                            {prevMonthTotal > 0 && (
+                                <Chip size="small" color="default" variant="outlined"
+                                    label={`Minulý mesiac: ${prevMonthTotal.toFixed(2)} EUR`} />
+                            )}
+                        </Stack>
+                    )}
                 </Stack>
             )}
 
@@ -274,6 +304,7 @@ export const TravelOrdersWidget = ({
                                             await onDeleteAttachment(r.id, id)
                                             setAttachmentsMap(m => ({ ...m, [r.id]: (m[r.id] ?? []).filter(a => a.id !== id) }))
                                         } : undefined}
+                                        onReadAttachment={onReadAttachment ? (id) => onReadAttachment(r.id, id) : undefined}
                                     />
                                 </Collapse>
                                 <Divider />
@@ -352,6 +383,7 @@ export const TravelOrdersWidget = ({
                                             await onDeleteAttachment(r.id, id)
                                             setAttachmentsMap(m => ({ ...m, [r.id]: (m[r.id] ?? []).filter(a => a.id !== id) }))
                                         } : undefined}
+                                        onReadAttachment={onReadAttachment ? (id) => onReadAttachment(r.id, id) : undefined}
                                     />
                                                 </Collapse>
                                             </TableCell>
@@ -383,8 +415,10 @@ export const TravelOrdersWidget = ({
                     onSave={handleSave}
                     onClose={() => setDialog(null)}
                     onAddAttachment={onAddAttachment ? (tempId) => onAddAttachment(tempId) : undefined}
+                    onAddAttachmentFromPath={onAddAttachmentFromPath ? (tempId, filePath) => onAddAttachmentFromPath(tempId, filePath) : undefined}
                     onDeleteAttachment={onDeleteAttachment ? (tempId, id) => onDeleteAttachment(tempId, id) : undefined}
                     onOpenAttachment={onOpenAttachment ? (tempId, id) => onOpenAttachment(tempId, id) : undefined}
+                    onReadAttachment={onReadAttachment ? (tempId, id) => onReadAttachment(tempId, id) : undefined}
                 />
             )}
             {empOpen && onEmployeeCreate && onEmployeeUpdate && onEmployeeDelete && (

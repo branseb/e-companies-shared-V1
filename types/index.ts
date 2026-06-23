@@ -93,6 +93,7 @@ export type TravelOrder = {
     applyAmortization?: boolean | null
     applyFuelCost?: boolean | null
     isElectric?: boolean | null
+    fuelType?: string | null
     advances?: Array<{ amount: number; currency: string }> | null
     useExchangeRates?: boolean | null
     exchangeRateDate?: string | null
@@ -205,9 +206,11 @@ export type TravelOrdersWidgetProps = {
     onPreferencesChange?: (prefs: TravelPreferences) => void
     onGetAttachments?: (orderId: TravelOrder['id']) => Promise<TravelOrderAttachment[]>
     onAddAttachment?: (orderId: TravelOrder['id']) => Promise<TravelOrderAttachment | null>
+    onAddAttachmentFromPath?: (orderId: TravelOrder['id'], filePath: string) => Promise<TravelOrderAttachment | null>
     onOpenAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => void
     onDeleteAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => Promise<void>
     onMigrateAttachments?: (tempId: string, realOrderId: TravelOrder['id']) => Promise<void>
+    onReadAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => Promise<{ buffer: ArrayBuffer; mimeType: string } | null>
 }
 
 export type TravelOrderAttachment = {
@@ -225,4 +228,5 @@ export type TravelOrderDetailPanelProps = {
     onAddAttachment?: () => void
     onOpenAttachment?: (id: string) => void
     onDeleteAttachment?: (id: string) => Promise<void>
+    onReadAttachment?: (id: string) => Promise<{ buffer: ArrayBuffer; mimeType: string } | null>
 }

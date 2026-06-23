@@ -1,5 +1,19 @@
 import type { StravneRates, StravneRatesEntry } from '../types'
 
+export const FUEL_TYPE_OPTIONS = [
+    { value: 'petrol',   label: 'Benzín',    consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
+    { value: 'diesel',   label: 'Nafta',     consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
+    { value: 'lpg',      label: 'LPG',       consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
+    { value: 'cng',      label: 'CNG',       consumptionUnit: 'kg/100km',   priceUnit: '€/kg',   expenseLabel: 'PHM' },
+    { value: 'electric', label: 'Elektrina', consumptionUnit: 'kWh/100km',  priceUnit: '€/kWh',  expenseLabel: 'El. energia' },
+    { value: 'hydrogen', label: 'Vodík',     consumptionUnit: 'kg/100km',   priceUnit: '€/kg',   expenseLabel: 'PHM' },
+] as const
+
+export const getFuelTypeInfo = (fuelType?: string | null, isElectric?: boolean | null) => {
+    const type = fuelType ?? (isElectric ? 'electric' : 'petrol')
+    return FUEL_TYPE_OPTIONS.find(o => o.value === type) ?? FUEL_TYPE_OPTIONS[0]
+}
+
 export const TRANSPORT_OPTIONS = [
     { value: 'car',         label: 'Vlastné auto (AUV)', short: 'AUV' },
     { value: 'company_car', label: 'Firemné auto (AUS)',  short: 'AUS' },
@@ -22,16 +36,18 @@ export const COUNTRY_OPTIONS = [
 
 
 export const STATUS_OPTIONS = [
-    { value: 'navrh',    label: 'Návrh' },
-    { value: 'approved', label: 'Schválený' },
-    { value: 'settled',  label: 'Vyúčtovaný' },
+    { value: 'navrh',     label: 'Vytvorený' },
+    { value: 'approved',  label: 'Schválený' },
+    { value: 'settled',   label: 'Vyúčtovaný' },
+    { value: 'processed', label: 'Spracovaný' },
 ]
 
-export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'info' | 'success' | 'warning' }> = {
-    draft:    { label: 'Koncept',     color: 'default' },
-    navrh:    { label: 'Návrh',       color: 'warning' },
-    approved: { label: 'Schválený',   color: 'info' },
-    settled:  { label: 'Vyúčtovaný', color: 'success' },
+export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'primary' | 'info' | 'success' | 'warning' }> = {
+    draft:     { label: 'Koncept',     color: 'default' },
+    navrh:     { label: 'Vytvorený',   color: 'warning' },
+    approved:  { label: 'Schválený',   color: 'info' },
+    settled:   { label: 'Vyúčtovaný', color: 'success' },
+    processed: { label: 'Spracovaný', color: 'primary' },
 }
 
 export const EXPENSE_TYPES = [

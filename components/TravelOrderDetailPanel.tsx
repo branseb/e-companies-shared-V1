@@ -1,7 +1,9 @@
-import { Box, Chip, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { AttachFile, Delete, InsertDriveFile } from '@mui/icons-material'
-import type { TravelOrderDetailPanelProps } from '../types'
+import { useState } from 'react'
+import { AppBar, Box, Chip, Dialog, Divider, IconButton, Stack, Toolbar, Tooltip, Typography } from '@mui/material'
+import { ArrowBack, AttachFile, Delete, InsertDriveFile } from '@mui/icons-material'
+import type { TravelOrderAttachment, TravelOrderDetailPanelProps } from '../types'
 import { computeOrderFinancials, calcDailyStravne } from '../helpers'
+import { getFuelTypeInfo } from '../constants'
 import { fmtDate, fmtAmt, transportShort, transportLabel } from '../helpers'
 
 const FinRow = ({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) => (
@@ -11,8 +13,24 @@ const FinRow = ({ label, value, bold = false }: { label: string; value: string; 
     </Box>
 )
 
-export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, onAddAttachment, onOpenAttachment, onDeleteAttachment }: TravelOrderDetailPanelProps) => {
+export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, onAddAttachment, onOpenAttachment, onDeleteAttachment, onReadAttachment }: TravelOrderDetailPanelProps) => {
     const { fuelCost, amort, stravneMap, totalsMap } = computeOrderFinancials(r, ratesHistory)
+    const [preview, setPreview] = useState<{ url: string; mimeType: string; name: string } | null>(null)
+
+    const handleAttachmentClick = async (att: TravelOrderAttachment) => {
+        if (!onReadAttachment) { onOpenAttachment?.(att.id); return }
+        const result = await onReadAttachment(att.id)
+        if (!result) { onOpenAttachment?.(att.id); return }
+        const isPreviewable = result.mimeType.startsWith('image/') || result.mimeType === 'application/pdf'
+        if (!isPreviewable) { onOpenAttachment?.(att.id); return }
+        const blob = new Blob([result.buffer], { type: result.mimeType })
+        setPreview({ url: URL.createObjectURL(blob), mimeType: result.mimeType, name: att.filename })
+    }
+
+    const closePreview = () => {
+        if (preview) URL.revokeObjectURL(preview.url)
+        setPreview(null)
+    }
 
     const advanceMap: Record<string, number> = {}
     if (r.advances?.length) {
@@ -30,6 +48,7 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, on
     const hasFinancials = Object.values(totalsMap).some(v => v > 0) || fuelCost > 0 || amort > 0
 
     return (
+    <>
         <Box sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
             <Stack sx={{ gap: 1.5 }}>
 
@@ -91,12 +110,15 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, on
                                 {transportLabel(r.transportType)}{r.ecv ? ` · EČV: ${r.ecv}` : ''}
                             </Typography>
                         )}
-                        {r.fuelConsumption != null && (
-                            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 12 }}>
-                                {r.fuelConsumption} {r.isElectric ? 'kWh/100km' : 'l/100km'}
-                                {r.fuelPricePerLiter ? ` @ ${r.fuelPricePerLiter} ${r.isElectric ? '€/kWh' : '€/l'}` : ''}
-                            </Typography>
-                        )}
+                        {r.fuelConsumption != null && (() => {
+                            const fi = getFuelTypeInfo(r.fuelType, r.isElectric)
+                            return (
+                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 12 }}>
+                                    {r.fuelConsumption} {fi.consumptionUnit}
+                                    {r.fuelPricePerLiter ? ` @ ${r.fuelPricePerLiter} ${fi.priceUnit}` : ''}
+                                </Typography>
+                            )
+                        })()}
                     </Stack>
                 )}
 
@@ -105,7 +127,7 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, on
                             {Object.entries(stravneMap).map(([c, amt]) => (
                                 <FinRow key={c} label={`Stravné${c !== 'EUR' ? ` (${c})` : ''}`} value={`${amt.toFixed(2)} ${c}`} />
                             ))}
-                            {fuelCost > 0 && <FinRow label={r.isElectric ? 'El. energia' : 'PHM'} value={`${fuelCost.toFixed(2)} EUR`} />}
+                            {fuelCost > 0 && <FinRow label={getFuelTypeInfo(r.fuelType, r.isElectric).expenseLabel} value={`${fuelCost.toFixed(2)} EUR`} />}
                             {amort > 0 && <FinRow label="Amortizácia" value={`${amort.toFixed(2)} EUR`} />}
 
                             <Divider sx={{ my: 0.75 }} />
@@ -172,8 +194,8 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, on
                                         <InsertDriveFile sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
                                         <Typography
                                             variant="body2"
-                                            sx={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onOpenAttachment ? 'pointer' : 'default', '&:hover': onOpenAttachment ? { color: 'primary.main' } : {} }}
-                                            onClick={() => onOpenAttachment?.(att.id)}
+                                            sx={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', '&:hover': { color: 'primary.main' } }}
+                                            onClick={() => handleAttachmentClick(att)}
                                         >
                                             {att.filename}
                                         </Typography>
@@ -197,6 +219,32 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, on
 
             </Stack>
         </Box>
+
+        {/* Preview dialog */}
+        {preview && (
+            <Dialog open onClose={closePreview} maxWidth="lg" fullWidth
+                slotProps={{ paper: { sx: { height: '90vh', borderRadius: '16px', display: 'flex', flexDirection: 'column' } } }}>
+                <AppBar position="sticky" color="default" elevation={0}
+                    sx={{ borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
+                    <Toolbar sx={{ gap: 1 }}>
+                        <IconButton edge="start" onClick={closePreview}><ArrowBack /></IconButton>
+                        <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600, fontSize: 15 }} noWrap>
+                            {preview.name}
+                        </Typography>
+                    </Toolbar>
+                </AppBar>
+                <Box sx={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+                    {preview.mimeType === 'application/pdf' ? (
+                        <embed src={preview.url} type="application/pdf" width="100%" height="100%" />
+                    ) : (
+                        <Box sx={{ height: '100%', overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+                            <img src={preview.url} alt={preview.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                        </Box>
+                    )}
+                </Box>
+            </Dialog>
+        )}
+    </>
     )
 }
 
