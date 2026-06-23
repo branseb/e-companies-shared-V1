@@ -5,7 +5,7 @@ import {
     TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
     useMediaQuery, useTheme,
 } from '@mui/material'
-import { Add, ContentCopy, Delete, Edit, PictureAsPdf, Search } from '@mui/icons-material'
+import { Add, ContentCopy, Delete, Edit, FileDownload, PictureAsPdf, Search } from '@mui/icons-material'
 import type { TravelOrder, TravelOrderAttachment, TravelOrderInput, TravelOrdersWidgetProps, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { DEFAULT_STRAVNE_RATES, STATUS_MAP, STATUS_OPTIONS } from '../constants'
@@ -123,6 +123,46 @@ export const TravelOrdersWidget = ({
             )
         })
 
+    const exportCsv = () => {
+        const sep = ';'
+        const cols = ['ID', 'Zamestnanec', 'Destinácia', 'Dátum odchodu', 'Dátum návratu',
+            'Doprava', 'EČV', 'Stravné (EUR)', 'PHM (EUR)', 'Amortizácia (EUR)',
+            'Záloha', 'Celkom (EUR)', 'Stav', 'Vytvorený']
+        const esc = (v: unknown) => {
+            const s = v == null ? '' : String(v)
+            return s.includes(sep) || s.includes('"') || s.includes('\n')
+                ? `"${s.replace(/"/g, '""')}"` : s
+        }
+        const rows = filteredOrders.map(r => {
+            const fin = computeOrderFinancials(r, effectiveRates)
+            const dep = r.trips?.[0]?.departureDate ?? r.departureDate ?? ''
+            const ret = r.trips?.[r.trips.length - 1]?.returnDate ?? r.returnDate ?? ''
+            const adv = r.advances?.length
+                ? r.advances.map(a => `${a.amount} ${a.currency}`).join(' + ')
+                : r.advanceAmount ? `${r.advanceAmount} ${r.currency}` : ''
+            return [
+                r.id, r.employee,
+                (r.trips?.map(t => t.destination).filter(Boolean).join(' / ') || r.destination),
+                dep, ret,
+                r.transportType ?? '', r.ecv ?? '',
+                Object.entries(fin.stravneMap).map(([c, a]) => c === 'EUR' ? a.toFixed(2) : `${a.toFixed(2)} ${c}`).join(' + ') || '0.00',
+                fin.fuelCost > 0 ? fin.fuelCost.toFixed(2) : '0.00',
+                fin.amort > 0 ? fin.amort.toFixed(2) : '0.00',
+                adv,
+                Object.entries(fin.totalsMap).filter(([, v]) => v > 0).map(([c, a]) => `${a.toFixed(2)} ${c}`).join(' + ') || '0.00',
+                STATUS_MAP[r.status as keyof typeof STATUS_MAP]?.label ?? r.status,
+                r.createdAt?.slice(0, 10) ?? '',
+            ].map(esc).join(sep)
+        })
+        const csv = '﻿' + [cols.join(sep), ...rows].join('\r\n')
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url; a.download = `cestovne-prikazy-${new Date().toISOString().slice(0, 10)}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
     // ── Cost summary ──────────────────────────────────────────────────────────
     const now = new Date()
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -219,6 +259,13 @@ export const TravelOrdersWidget = ({
                             slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> } }}
                             sx={{ minWidth: 180 }}
                         />
+                        <Tooltip title="Exportovať do CSV">
+                            <span>
+                                <IconButton size="small" onClick={exportCsv} disabled={filteredOrders.length === 0}>
+                                    <FileDownload fontSize="small" />
+                                </IconButton>
+                            </span>
+                        </Tooltip>
                     </Stack>
                     <ToggleButtonGroup size="small" exclusive value={filterStatus} onChange={(_, v) => v && setFilterStatus(v)} sx={{ flexWrap: 'wrap' }}>
                         <ToggleButton value="all">Všetky</ToggleButton>
