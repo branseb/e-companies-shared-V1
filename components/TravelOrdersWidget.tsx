@@ -6,7 +6,7 @@ import {
     useMediaQuery, useTheme,
 } from '@mui/material'
 import { Add, ContentCopy, Delete, Edit, PictureAsPdf, Search } from '@mui/icons-material'
-import type { TravelOrder, TravelOrderInput, TravelOrdersWidgetProps, TravelPreferences } from '../types'
+import type { TravelOrder, TravelOrderAttachment, TravelOrderInput, TravelOrdersWidgetProps, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { DEFAULT_STRAVNE_RATES, STATUS_MAP, STATUS_OPTIONS } from '../constants'
 import {
@@ -26,12 +26,21 @@ export const TravelOrdersWidget = ({
     companyRates, onCompanyRatesChange,
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
     preferences: prefsProp, onPreferencesChange,
+    onGetAttachments, onAddAttachment, onOpenAttachment, onDeleteAttachment, onMigrateAttachments,
 }: TravelOrdersWidgetProps) => {
     const [dialog, setDialog] = useState<{ isNew: boolean; form: TravelOrderInput; id?: TravelOrder['id'] } | null>(null)
     const [expandedRows, setExpandedRows] = useState<Set<TravelOrder['id']>>(new Set())
+    const [attachmentsMap, setAttachmentsMap] = useState<Record<string | number, TravelOrderAttachment[]>>({})
     const toggleRow = (id: TravelOrder['id']) => setExpandedRows(prev => {
         const s = new Set(prev)
-        if (s.has(id)) s.delete(id); else s.add(id)
+        if (s.has(id)) {
+            s.delete(id)
+        } else {
+            s.add(id)
+            if (onGetAttachments && !(id in attachmentsMap)) {
+                onGetAttachments(id).then(atts => setAttachmentsMap(m => ({ ...m, [id]: atts })))
+            }
+        }
         return s
     })
     const [ratesOpen, setRatesOpen] = useState(false)
@@ -62,9 +71,15 @@ export const TravelOrdersWidget = ({
         setDialog({ isNew: true, form })
     }
 
-    const handleSave = async (data: TravelOrderInput) => {
-        if (dialog!.isNew) await onAdd(data)
-        else await onUpdate(dialog!.id!, data)
+    const handleSave = async (data: TravelOrderInput, attachmentTempId: string) => {
+        if (dialog!.isNew) {
+            const newId = await onAdd(data)
+            if (newId != null && onMigrateAttachments) {
+                await onMigrateAttachments(attachmentTempId, newId).catch(() => {/* non-fatal */})
+            }
+        } else {
+            await onUpdate(dialog!.id!, data)
+        }
         setDialog(null)
     }
 
@@ -246,7 +261,20 @@ export const TravelOrdersWidget = ({
                                     </Stack>
                                 </Box>
                                 <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                                    <TravelOrderDetailPanel order={r} ratesHistory={effectiveRates} />
+                                    <TravelOrderDetailPanel
+                                        order={r}
+                                        ratesHistory={effectiveRates}
+                                        attachments={onGetAttachments ? (attachmentsMap[r.id] ?? []) : undefined}
+                                        onAddAttachment={onAddAttachment ? async () => {
+                                            const att = await onAddAttachment(r.id)
+                                            if (att) setAttachmentsMap(m => ({ ...m, [r.id]: [...(m[r.id] ?? []), att] }))
+                                        } : undefined}
+                                        onOpenAttachment={onOpenAttachment ? (id) => onOpenAttachment(r.id, id) : undefined}
+                                        onDeleteAttachment={onDeleteAttachment ? async (id) => {
+                                            await onDeleteAttachment(r.id, id)
+                                            setAttachmentsMap(m => ({ ...m, [r.id]: (m[r.id] ?? []).filter(a => a.id !== id) }))
+                                        } : undefined}
+                                    />
                                 </Collapse>
                                 <Divider />
                                 <Stack direction="row" sx={{ px: 1, py: 0.5, gap: 0.5, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
@@ -311,7 +339,20 @@ export const TravelOrdersWidget = ({
                                         <TableRow>
                                             <TableCell colSpan={9} sx={{ p: 0, border: isExpanded ? undefined : 'none' }}>
                                                 <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                                                    <TravelOrderDetailPanel order={r} ratesHistory={effectiveRates} />
+                                                    <TravelOrderDetailPanel
+                                        order={r}
+                                        ratesHistory={effectiveRates}
+                                        attachments={onGetAttachments ? (attachmentsMap[r.id] ?? []) : undefined}
+                                        onAddAttachment={onAddAttachment ? async () => {
+                                            const att = await onAddAttachment(r.id)
+                                            if (att) setAttachmentsMap(m => ({ ...m, [r.id]: [...(m[r.id] ?? []), att] }))
+                                        } : undefined}
+                                        onOpenAttachment={onOpenAttachment ? (id) => onOpenAttachment(r.id, id) : undefined}
+                                        onDeleteAttachment={onDeleteAttachment ? async (id) => {
+                                            await onDeleteAttachment(r.id, id)
+                                            setAttachmentsMap(m => ({ ...m, [r.id]: (m[r.id] ?? []).filter(a => a.id !== id) }))
+                                        } : undefined}
+                                    />
                                                 </Collapse>
                                             </TableCell>
                                         </TableRow>
@@ -335,11 +376,15 @@ export const TravelOrdersWidget = ({
                 <OrderDialog
                     initial={dialog.form}
                     isNew={dialog.isNew}
+                    orderId={dialog.id}
                     ratesHistory={effectiveRates}
                     employees={employees}
                     preferences={effectivePrefs}
                     onSave={handleSave}
                     onClose={() => setDialog(null)}
+                    onAddAttachment={onAddAttachment ? (tempId) => onAddAttachment(tempId) : undefined}
+                    onDeleteAttachment={onDeleteAttachment ? (tempId, id) => onDeleteAttachment(tempId, id) : undefined}
+                    onOpenAttachment={onOpenAttachment ? (tempId, id) => onOpenAttachment(tempId, id) : undefined}
                 />
             )}
             {empOpen && onEmployeeCreate && onEmployeeUpdate && onEmployeeDelete && (

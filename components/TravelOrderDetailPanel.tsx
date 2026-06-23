@@ -1,4 +1,5 @@
-import { Box, Chip, Divider, Stack, Typography } from '@mui/material'
+import { Box, Chip, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { AttachFile, Delete, InsertDriveFile } from '@mui/icons-material'
 import type { TravelOrderDetailPanelProps } from '../types'
 import { computeOrderFinancials, calcDailyStravne } from '../helpers'
 import { fmtDate, fmtAmt, transportShort, transportLabel } from '../helpers'
@@ -10,7 +11,7 @@ const FinRow = ({ label, value, bold = false }: { label: string; value: string; 
     </Box>
 )
 
-export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDetailPanelProps) => {
+export const TravelOrderDetailPanel = ({ order: r, ratesHistory, attachments, onAddAttachment, onOpenAttachment, onDeleteAttachment }: TravelOrderDetailPanelProps) => {
     const { rowCarKm, fuelCost, amort, stravneMap, totalsMap, hasSegs } = computeOrderFinancials(r, ratesHistory)
 
     const advanceMap: Record<string, number> = {}
@@ -148,6 +149,50 @@ export const TravelOrderDetailPanel = ({ order: r, ratesHistory }: TravelOrderDe
                     <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', fontSize: 12 }}>
                         {r.notes}
                     </Typography>
+                )}
+
+                {(attachments !== undefined || onAddAttachment) && (
+                    <Box>
+                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Prílohy
+                            </Typography>
+                            {onAddAttachment && (
+                                <Tooltip title="Pridať prílohu">
+                                    <IconButton size="small" onClick={onAddAttachment}>
+                                        <AttachFile sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Stack>
+                        {attachments?.length ? (
+                            <Stack sx={{ gap: 0.5 }}>
+                                {attachments.map(att => (
+                                    <Stack key={att.id} direction="row" sx={{ alignItems: 'center', gap: 0.5, px: 1, py: 0.4, borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
+                                        <InsertDriveFile sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
+                                        <Typography
+                                            variant="body2"
+                                            sx={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onOpenAttachment ? 'pointer' : 'default', '&:hover': onOpenAttachment ? { color: 'primary.main' } : {} }}
+                                            onClick={() => onOpenAttachment?.(att.id)}
+                                        >
+                                            {att.filename}
+                                        </Typography>
+                                        {onDeleteAttachment && (
+                                            <Tooltip title="Odstrániť">
+                                                <IconButton size="small" onClick={() => onDeleteAttachment(att.id)}>
+                                                    <Delete sx={{ fontSize: 14 }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        )}
+                                    </Stack>
+                                ))}
+                            </Stack>
+                        ) : (
+                            <Typography variant="body2" sx={{ fontSize: 12, color: 'text.secondary', fontStyle: 'italic' }}>
+                                Žiadne prílohy
+                            </Typography>
+                        )}
+                    </Box>
                 )}
 
             </Stack>

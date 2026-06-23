@@ -189,7 +189,7 @@ export type EmployeeFormData = {
 export type TravelOrdersWidgetProps = {
     orders: TravelOrder[]
     loading: boolean
-    onAdd: (data: TravelOrderInput) => Promise<void>
+    onAdd: (data: TravelOrderInput) => Promise<TravelOrder['id'] | undefined>
     onUpdate: (id: TravelOrder['id'], data: Partial<TravelOrderInput>) => Promise<void>
     onDelete: (id: TravelOrder['id']) => Promise<void>
     onGeneratePdf?: (order: TravelOrder) => void
@@ -203,9 +203,26 @@ export type TravelOrdersWidgetProps = {
     onEmployeeDelete?: (id: number) => Promise<void>
     preferences?: TravelPreferences | null
     onPreferencesChange?: (prefs: TravelPreferences) => void
+    onGetAttachments?: (orderId: TravelOrder['id']) => Promise<TravelOrderAttachment[]>
+    onAddAttachment?: (orderId: TravelOrder['id']) => Promise<TravelOrderAttachment | null>
+    onOpenAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => void
+    onDeleteAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => Promise<void>
+    onMigrateAttachments?: (tempId: string, realOrderId: TravelOrder['id']) => Promise<void>
+}
+
+export type TravelOrderAttachment = {
+    id: string
+    filename: string
+    storedName: string
+    addedAt: string
+    size: number
 }
 
 export type TravelOrderDetailPanelProps = {
     order: TravelOrder
     ratesHistory: StravneRates
+    attachments?: TravelOrderAttachment[]
+    onAddAttachment?: () => void
+    onOpenAttachment?: (id: string) => void
+    onDeleteAttachment?: (id: string) => Promise<void>
 }

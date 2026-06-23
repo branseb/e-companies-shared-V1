@@ -9,14 +9,15 @@ type Props = {
     allCountries: CountryOption[]
     onChange: (code: string) => void
     sx?: SxProps
+    size?: 'small' | 'medium'
 }
 
-const CountryAutocomplete = ({ value, allCountries, onChange, sx }: Props) => {
+const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small' }: Props) => {
     const selected = allCountries.find(c => c.code === value) ?? null
 
     return (
         <Autocomplete
-            size="small"
+            size={size}
             sx={sx}
             options={allCountries}
             value={selected}
@@ -46,7 +47,7 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx }: Props) => {
                 <TextField
                     {...params}
                     label="Krajina"
-                    size="small"
+                    size={size}
                     slotProps={{ inputLabel: { shrink: true } }}
                 />
             )}

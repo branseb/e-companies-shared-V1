@@ -2,10 +2,10 @@ import { Fragment, useMemo, useRef, useState } from 'react'
 import {
     AppBar, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
     Chip, Dialog, Divider, FormControlLabel, IconButton, MenuItem,
-    Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography,
+    Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
-import { Add, ArrowBack, CheckCircle, Delete, DirectionsCar, Edit, Explore, FlagOutlined, Person, Restaurant } from '@mui/icons-material'
-import type { TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
+import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, Explore, FlagOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
+import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS } from '../constants'
 import {
@@ -22,11 +22,15 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 type DialogProps = {
     initial: TravelOrderInput
     isNew: boolean
+    orderId?: string | number
     ratesHistory: StravneRates
     employees: EmployeeRecord[]
     preferences?: TravelPreferences
-    onSave: (data: TravelOrderInput) => Promise<void>
+    onSave: (data: TravelOrderInput, attachmentTempId: string) => Promise<void>
     onClose: () => void
+    onAddAttachment?: (tempId: string) => Promise<TravelOrderAttachment | null>
+    onDeleteAttachment?: (tempId: string, id: string) => Promise<void>
+    onOpenAttachment?: (tempId: string, id: string) => void
 }
 
 const STEPS = ['Zamestnanec', 'Cesta', 'Doprava', 'Náhrady', 'Súhrn']
@@ -167,7 +171,8 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
 
 // ── Main dialog ──────────────────────────────────────────────────────────────
 
-const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onSave, onClose }: DialogProps) => {
+const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, onSave, onClose, onAddAttachment, onDeleteAttachment, onOpenAttachment }: DialogProps) => {
+    const isMobile = useMediaQuery('(max-width:599px)')
     const prefs = preferences ?? DEFAULT_TRAVEL_PREFERENCES
     const [form, setForm] = useState<TravelOrderInput>(initial)
     const [saving, setSaving] = useState(false)
@@ -175,6 +180,9 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
+    const tempIdRef = useRef<string>(isNew ? crypto.randomUUID() : String(orderId ?? crypto.randomUUID()))
+    const [attachments, setAttachments] = useState<TravelOrderAttachment[]>([])
+    const [addingAttachment, setAddingAttachment] = useState(false)
 
     const set = <K extends keyof TravelOrderInput>(field: K, value: TravelOrderInput[K]) =>
         setForm(f => ({ ...f, [field]: value }))
@@ -441,7 +449,24 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
             departureDate: form.trips[0].departureDate || form.departureDate,
             destination:   form.trips.map(t => t.destination).join(' / '),
         }
-        try { await onSave(saved) } finally { setSaving(false) }
+        try { await onSave(saved, tempIdRef.current) } finally { setSaving(false) }
+    }
+
+    const handleAddAttachment = async () => {
+        if (!onAddAttachment) return
+        setAddingAttachment(true)
+        try {
+            const att = await onAddAttachment(tempIdRef.current)
+            if (att) setAttachments(prev => [...prev, att])
+        } finally {
+            setAddingAttachment(false)
+        }
+    }
+
+    const handleDeleteAttachment = async (id: string) => {
+        if (!onDeleteAttachment) return
+        await onDeleteAttachment(tempIdRef.current, id)
+        setAttachments(prev => prev.filter(a => a.id !== id))
     }
 
     const goTo = (step: number) => {
@@ -1172,6 +1197,56 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
                         </Stack>
                     </CardContent>
                 </Card>
+
+                {onAddAttachment && (
+                    <Card sx={sxCard}>
+                        <CardContent>
+                            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                                <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>Prílohy</Typography>
+                                <Tooltip title="Pridať prílohu">
+                                    <span>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            startIcon={addingAttachment ? <CircularProgress size={14} /> : <AttachFile />}
+                                            disabled={addingAttachment}
+                                            onClick={handleAddAttachment}
+                                            sx={{ borderRadius: '10px' }}
+                                        >
+                                            Pridať
+                                        </Button>
+                                    </span>
+                                </Tooltip>
+                            </Stack>
+                            {attachments.length === 0 ? (
+                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 13, fontStyle: 'italic' }}>
+                                    Žiadne prílohy (blok od tankovania, faktúra z hotela, mýto…)
+                                </Typography>
+                            ) : (
+                                <Stack sx={{ gap: 0.75 }}>
+                                    {attachments.map(att => (
+                                        <Stack key={att.id} direction="row" sx={{ alignItems: 'center', gap: 1, px: 1.25, py: 0.75, borderRadius: '10px', border: '1px solid', borderColor: 'divider', bgcolor: 'action.hover' }}>
+                                            <InsertDriveFile sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />
+                                            <Typography
+                                                variant="body2"
+                                                sx={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: onOpenAttachment ? 'pointer' : 'default', '&:hover': onOpenAttachment ? { color: 'primary.main' } : {} }}
+                                                onClick={() => onOpenAttachment?.(tempIdRef.current, att.id)}
+                                            >
+                                                {att.filename}
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', flexShrink: 0 }}>
+                                                {(att.size / 1024).toFixed(0)} kB
+                                            </Typography>
+                                            <IconButton size="small" color="error" onClick={() => handleDeleteAttachment(att.id)}>
+                                                <Delete sx={{ fontSize: 16 }} />
+                                            </IconButton>
+                                        </Stack>
+                                    ))}
+                                </Stack>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
             </>
         )
     }
@@ -1267,6 +1342,7 @@ const OrderDialog = ({ initial, isNew, ratesHistory, employees, preferences, onS
         <Dialog
             open
             onClose={onClose}
+            fullScreen={isMobile}
             maxWidth={false}
             slotProps={{
                 paper: {

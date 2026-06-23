@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
-    Alert, Box, Button, IconButton, MenuItem, Paper, Stack, TextField, Tooltip,
+    Alert, Box, Button, IconButton, ListItemIcon, Menu, MenuItem, Paper, Stack, TextField, Tooltip,
 } from '@mui/material'
-import { Add, ArrowDownward, ArrowUpward, Delete, Receipt } from '@mui/icons-material'
+import { Add, ArrowDownward, ArrowUpward, Delete, MoreVert, Receipt } from '@mui/icons-material'
 import type { TripSegment, StravneRates, CountryOption } from '../types'
 import { TRANSPORT_OPTIONS, EXPENSE_TYPES } from '../constants'
 import { calcSegStravne, getRatesForDate } from '../helpers'
@@ -108,6 +108,7 @@ type SegEditorProps = {
 
 const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHistory, allCountries, onChange, vreckoveLimit, vreckoveLimitCur, exchangeRates }: SegEditorProps) => {
     const [expandedExp, setExpandedExp] = useState<Set<number>>(new Set())
+    const [menuAnchor, setMenuAnchor] = useState<{ i: number; el: HTMLElement } | null>(null)
     const segRates = (date: string) => getRatesForDate(ratesHistory, date || tripDate)
     const segCtry = (seg: TripSegment) => seg.country ?? defaultCountry
 
@@ -165,16 +166,34 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
     }
 
     return (
-        <Stack sx={{ gap: 1 }}>
+        <Stack sx={{ gap: 1.5 }}>
             {segments.map((seg, i) => (
-                <Paper key={i} variant="outlined" sx={{ p: 1, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
-                    <Stack sx={{ gap: 0.75 }}>
-                        <Stack direction="row" sx={{ gap: 0.5, alignItems: 'center' }}>
-                            <TextField type="date" size="small" sx={{ flex: 1 }} label="Dátum"
+                <Paper key={i} variant="outlined" sx={{ p: { xs: 1.5, sm: 1 }, bgcolor: i % 2 === 1 ? 'action.hover' : undefined }}>
+                    <Stack sx={{
+                        gap: 1,
+                        '& .MuiOutlinedInput-input': {
+                            py: { xs: '8.5px', sm: '16.5px' },
+                            fontSize: { xs: '0.875rem', sm: '1rem' },
+                        },
+                        '& .MuiInputLabel-root': {
+                            fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                        },
+                        '& .MuiSelect-select': {
+                            py: { xs: '8.5px', sm: '16.5px' },
+                            fontSize: { xs: '0.875rem', sm: '1rem' },
+                        },
+                        '& .MuiAutocomplete-root .MuiOutlinedInput-root': {
+                            py: { xs: '0px', sm: '9px' },
+                        },
+                    }}>
+
+                        {/* Riadok 1: Dátum + Doprava + Akcie */}
+                        <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                            <TextField type="date" label="Dátum" sx={{ flex: 1 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.date}
                                 onChange={e => update(i, 'date', e.target.value)} />
-                            <TextField select size="small" sx={{ width: 80 }} label="Doprava"
+                            <TextField select label="Doprava" sx={{ width: { xs: 100, sm: 90 } }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.transport}
                                 onChange={e => update(i, 'transport', e.target.value)}>
@@ -182,7 +201,9 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                     <MenuItem key={o.value} value={o.value}>{o.short}</MenuItem>
                                 ))}
                             </TextField>
-                            <Stack direction="row">
+
+                            {/* Desktop: všetky 3 tlačidlá */}
+                            <Stack direction="row" sx={{ display: { xs: 'none', sm: 'flex' } }}>
                                 <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)}>
                                     <ArrowUpward sx={{ fontSize: 14 }} />
                                 </IconButton>
@@ -196,41 +217,80 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                         <Receipt sx={{ fontSize: 14 }} />
                                     </IconButton>
                                 </Tooltip>
-                                <IconButton size="small" color="error" onClick={() => remove(i)}>
-                                    <Delete fontSize="small" />
-                                </IconButton>
                             </Stack>
+
+                            {/* Mobile: MoreVert menu */}
+                            <IconButton
+                                size="small"
+                                sx={{ display: { xs: 'flex', sm: 'none' } }}
+                                color={seg.expenses?.length ? 'primary' : 'default'}
+                                onClick={e => setMenuAnchor({ i, el: e.currentTarget })}>
+                                <MoreVert fontSize="small" />
+                            </IconButton>
+
+                            <IconButton size="small" color="error" onClick={() => remove(i)}>
+                                <Delete fontSize="small" />
+                            </IconButton>
                         </Stack>
-                        <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField size="small" label="Odchod z" sx={{ flex: 1 }}
+
+                        {/* MoreVert menu pre mobile */}
+                        <Menu
+                            open={menuAnchor?.i === i}
+                            anchorEl={menuAnchor?.el}
+                            onClose={() => setMenuAnchor(null)}>
+                            <MenuItem disabled={i === 0} onClick={() => { move(i, -1); setMenuAnchor(null) }}>
+                                <ListItemIcon><ArrowUpward fontSize="small" /></ListItemIcon>
+                                Posunúť hore
+                            </MenuItem>
+                            <MenuItem disabled={i === segments.length - 1} onClick={() => { move(i, 1); setMenuAnchor(null) }}>
+                                <ListItemIcon><ArrowDownward fontSize="small" /></ListItemIcon>
+                                Posunúť dole
+                            </MenuItem>
+                            <MenuItem onClick={() => { toggleExp(i); setMenuAnchor(null) }}>
+                                <ListItemIcon>
+                                    <Receipt fontSize="small" color={seg.expenses?.length ? 'primary' : 'inherit'} />
+                                </ListItemIcon>
+                                Výdavky{seg.expenses?.length ? ` (${seg.expenses.length})` : ''}
+                            </MenuItem>
+                        </Menu>
+
+                        {/* Riadok 2: Odchod z + Čas od */}
+                        <Stack direction="row" sx={{ gap: 1 }}>
+                            <TextField label="Odchod z" sx={{ flex: 1 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.fromPlace}
                                 onChange={e => update(i, 'fromPlace', e.target.value)} />
-                            <TimePickerField label="Čas od" size="small" sx={{ width: 115 }}
+                            <TimePickerField label="Čas od" sx={{ width: { xs: 92, sm: 130 } }}
                                 value={seg.fromTime}
                                 onChange={v => update(i, 'fromTime', v)} />
                         </Stack>
-                        <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField size="small" label="Príchod do" sx={{ flex: 1 }}
+
+                        {/* Riadok 3: Príchod do + Čas do */}
+                        <Stack direction="row" sx={{ gap: 1 }}>
+                            <TextField label="Príchod do" sx={{ flex: 1 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.toPlace}
                                 onChange={e => update(i, 'toPlace', e.target.value)} />
-                            <TimePickerField label="Čas do" size="small" sx={{ width: 115 }}
+                            <TimePickerField label="Čas do" sx={{ width: { xs: 92, sm: 130 } }}
                                 value={seg.toTime}
                                 onChange={v => update(i, 'toTime', v)} />
                         </Stack>
-                        <Stack direction="row" sx={{ gap: 0.5 }}>
-                            <TextField type="number" size="small" sx={{ flex: 1 }} label="km"
+
+                        {/* Riadok 4: km + Krajina */}
+                        <Stack direction="row" sx={{ gap: 1 }}>
+                            <TextField type="number" sx={{ flex: 1 }} label="km"
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={seg.km ?? ''}
                                 onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
                             <CountryAutocomplete
+                                size="medium"
                                 sx={{ width: 170 }}
                                 value={seg.country ?? defaultCountry}
                                 allCountries={allCountries}
                                 onChange={v => update(i, 'country', v)}
                             />
                         </Stack>
+
                         {(() => {
                             const country = seg.country ?? defaultCountry
                             if (country === 'SK') return null
