@@ -15,11 +15,11 @@ const getLabel = (o: CountryOption) =>
 
 const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small' }: Props) => {
     const found = allCountries.find(c => c.code === value)
-    const synth: CountryOption | null = !found && value
+    const synth: CountryOption | undefined = !found && value
         ? { code: value, label: value, currency: 'EUR', borderPrefix: '' }
-        : null
+        : undefined
     const options = synth ? [synth, ...allCountries] : allCountries
-    const selected = found ?? synth ?? null
+    const selected = found ?? synth ?? undefined
 
     return (
         <Autocomplete
