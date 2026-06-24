@@ -1,6 +1,7 @@
 export { default as FormSection } from './FormSection'
 export { default as CountryAutocomplete } from './CountryAutocomplete'
 export { default as TimePickerField } from './TimePickerField'
+export { default as NumberField } from './NumberField'
 export { default as SegmentEditor } from './SegmentEditor'
 export { default as EmployeesDialog } from './EmployeesDialog'
 export { default as RatesDialog } from './RatesDialog'

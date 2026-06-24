@@ -8,6 +8,7 @@ import { TRANSPORT_OPTIONS, EXPENSE_TYPES } from '../constants'
 import { calcSegStravne, getRatesForDate } from '../helpers'
 import { emptySegment } from '../helpers'
 import TimePickerField from './TimePickerField'
+import NumberField from './NumberField'
 import CountryAutocomplete from './CountryAutocomplete'
 
 type ExpenseEntry = { type: string; amount: number; currency: string }
@@ -278,10 +279,9 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
 
                         {/* Riadok 4: km + Krajina */}
                         <Stack direction="row" sx={{ gap: 1 }}>
-                            <TextField type="number" sx={{ flex: 1 }} label="km"
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={seg.km ?? ''}
-                                onChange={e => update(i, 'km', e.target.value ? Number(e.target.value) : null)} />
+                            <NumberField sx={{ flex: 1 }} label="km"
+                                value={seg.km}
+                                onChange={v => update(i, 'km', v)} />
                             <CountryAutocomplete
                                 size="medium"
                                 sx={{ width: 170 }}

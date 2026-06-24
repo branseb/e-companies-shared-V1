@@ -32,11 +32,9 @@ export const createAppTheme = (mode: 'light' | 'dark'): Theme => {
                     '*::-webkit-scrollbar-thumb': { background: thumb, borderRadius: 99 },
                     '*::-webkit-scrollbar-thumb:hover': { background: thumbHover },
                     'input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button': {
-                        backgroundColor: 'transparent',
-                        opacity: mode === 'dark' ? 0.6 : 0.8,
-                        ...(mode === 'dark' ? { filter: 'invert(1)' } : {}),
-                        cursor: 'pointer',
+                        display: 'none',
                     },
+                    'input[type=number]': { MozAppearance: 'textfield' },
                     'input[type=time]::-webkit-calendar-picker-indicator, input[type=date]::-webkit-calendar-picker-indicator': {
                         opacity: mode === 'dark' ? 0.5 : 0.6,
                         ...(mode === 'dark' ? { filter: 'invert(1)' } : {}),
