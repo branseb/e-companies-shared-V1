@@ -184,7 +184,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             fontSize: { xs: '0.875rem', sm: '1rem' },
                         },
                         '& .MuiAutocomplete-root .MuiOutlinedInput-root': {
-                            py: { xs: '0px', sm: '9px' },
+                            py: 0,
                         },
                     }}>
 
@@ -285,7 +285,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             <CountryAutocomplete
                                 size="medium"
                                 sx={{ width: 170 }}
-                                value={seg.country ?? defaultCountry}
+                                value={seg.country || defaultCountry}
                                 allCountries={allCountries}
                                 onChange={v => update(i, 'country', v)}
                             />
