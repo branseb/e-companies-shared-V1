@@ -26,8 +26,10 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small'
             value={selected}
             getOptionLabel={getLabel}
             filterOptions={(opts, { inputValue: q }) => {
-                if (!q.trim()) return opts
-                const ql = q.toLowerCase()
+                const currentLabel = typeof selected === 'string' ? selected : getLabel(selected as CountryOption)
+                const trimmed = q.trim()
+                if (!trimmed || q === currentLabel) return opts
+                const ql = trimmed.toLowerCase()
                 return opts.filter(o =>
                     o.label.toLowerCase().includes(ql) ||
                     o.code.toLowerCase().includes(ql) ||
