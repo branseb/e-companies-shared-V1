@@ -52,7 +52,11 @@ const NumberField = ({ label, value, onChange, min = 0, step = 1, sx, size, full
                     },
                 },
             }}
-            onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+            onChange={e => {
+                if (e.target.value === '') { onChange(null); return }
+                const n = Number(e.target.value)
+                onChange(n < min ? min : n)
+            }}
         />
     )
 }

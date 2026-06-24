@@ -184,7 +184,13 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                             fontSize: { xs: '0.875rem', sm: '1rem' },
                         },
                         '& .MuiAutocomplete-root .MuiOutlinedInput-root': {
-                            py: 0,
+                            paddingTop: '0 !important',
+                            paddingBottom: '0 !important',
+                            minHeight: 'unset',
+                        },
+                        '& .MuiAutocomplete-root .MuiAutocomplete-input': {
+                            paddingTop: { xs: '8.5px !important', sm: '16.5px !important' },
+                            paddingBottom: { xs: '8.5px !important', sm: '16.5px !important' },
                         },
                     }}>
 
