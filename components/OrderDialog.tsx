@@ -581,7 +581,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         options={employees}
                         getOptionLabel={o => typeof o === 'string' ? o : o.name}
                         inputValue={form.employee}
-                        onInputChange={(_e, val) => set('employee', val)}
+                        onInputChange={(_e, val, reason) => { if (reason !== 'reset') set('employee', val) }}
                         onChange={(_e, val) => {
                             if (val && typeof val !== 'string') {
                                 set('employee', val.name)
