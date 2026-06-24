@@ -10,6 +10,8 @@ type Props = {
     size?: 'small' | 'medium'
 }
 
+const FALLBACK: CountryOption = { code: 'SK', label: 'Slovensko', currency: 'EUR', borderPrefix: '' }
+
 const getLabel = (o: CountryOption) =>
     o.currency !== 'EUR' ? `${o.label} (${o.currency})` : o.label
 
@@ -18,11 +20,12 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small'
     const synth: CountryOption | undefined = !found && value
         ? { code: value, label: value, currency: 'EUR', borderPrefix: '' }
         : undefined
-    const options = synth ? [synth, ...allCountries] : allCountries
-    const selected = found ?? synth ?? undefined
+    const options: CountryOption[] = synth ? [synth, ...allCountries] : allCountries
+    // disableClearable vyžaduje non-nullable value — vždy poskytneme platný objekt
+    const selected: CountryOption = found ?? synth ?? allCountries[0] ?? FALLBACK
 
     return (
-        <Autocomplete
+        <Autocomplete<CountryOption, false, true, false>
             disableClearable
             size={size}
             sx={sx}
@@ -61,7 +64,13 @@ const CountryAutocomplete = ({ value, allCountries, onChange, sx, size = 'small'
                     {...params}
                     label="Krajina"
                     size={size}
-                    slotProps={{ inputLabel: { shrink: true } }}
+                    slotProps={{
+                        ...params.slotProps,
+                        inputLabel: {
+                            ...(params.slotProps?.inputLabel as object | undefined),
+                            shrink: true,
+                        },
+                    }}
                 />
             )}
         />
