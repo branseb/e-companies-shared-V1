@@ -25,6 +25,7 @@ export type TripPdf = {
     departureTime?: string | null
     returnLocation?: string | null
     returnDate?: string | null
+    returnTime?: string | null
     segments: TripSegment[]
 }
 
@@ -199,7 +200,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     if (d.trips && d.trips.length > 0) {
         for (const trip of d.trips) {
             const depStr = [trip.departureLocation, fmtD(trip.departureDate), trip.departureTime].filter(Boolean).join(' ')
-            const retStr = [trip.returnLocation || trip.departureLocation, fmtD(trip.returnDate)].filter(Boolean).join(' ')
+            const retStr = [trip.returnLocation || trip.departureLocation, fmtD(trip.returnDate), trip.returnTime].filter(Boolean).join(' ')
             const dataY = y + 1
             boldVal(doc, depStr, c1 + 2, dataY + 4)
             vLine(doc, c2, y, y + 8)

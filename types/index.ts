@@ -22,6 +22,7 @@ export type Trip = {
     departureTime?: string | null
     returnLocation?: string | null
     returnDate?: string | null
+    returnTime?: string | null
     segments: TripSegment[]
 }
 

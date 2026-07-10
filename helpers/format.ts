@@ -39,6 +39,7 @@ export const emptyTrip = (date: string, _transport: string): Trip => ({
     departureTime: '',
     returnLocation: '',
     returnDate: date,
+    returnTime: '',
     segments: [],
 })
 

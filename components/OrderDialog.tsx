@@ -406,6 +406,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const depDate   = trip.departureDate
         const retDate   = trip.returnDate ?? depDate
         const depTime   = trip.departureTime ?? ''
+        const retTime   = trip.returnTime ?? ''
         const dest      = trip.destination
         const tripCountryCode = trip.country ?? 'SK'
         const destCtry  = allCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
@@ -456,7 +457,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         i === 0 ? dest : hr(rev[i - 1], rev[i]),
                         i === 0 ? retFromTime : '',
                         i === rev.length - 1 ? retLoc : hr(rev[i], rev[i + 1]),
-                        '',
+                        i === rev.length - 1 ? retTime : '',
                         country, km)
                 })
 
@@ -471,14 +472,14 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          arrToTime, destCtry.code, kmDst),
                     ...midSegs(destCtry.code),
                     mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, '',        destCtry.code, kmDst),
-                    mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        '',        'SK',          kmSK),
+                    mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        retTime,   'SK',          kmSK),
                 ]
             }
         } else {
             segs = [
                 mkSeg(depDate, depLoc, depTime,     dest,   arrToTime, 'SK'),
                 ...midSegs('SK'),
-                mkSeg(retDate, dest,   retFromTime, retLoc, '',        'SK'),
+                mkSeg(retDate, dest,   retFromTime, retLoc, retTime,   'SK'),
             ]
         }
 
@@ -883,12 +884,18 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     value={trip.returnLocation ?? ''}
                                     onChange={e => updateTrip(ti, 'returnLocation', e.target.value)} />
 
-                                <TextField label="Dátum návratu" type="date" fullWidth
-                                    slotProps={{ inputLabel: { shrink: true } }}
-                                    value={trip.returnDate ?? ''}
-                                    error={!!trip.returnDate && trip.returnDate < trip.departureDate}
-                                    helperText={!!trip.returnDate && trip.returnDate < trip.departureDate ? 'Dátum návratu je pred dátumom odchodu' : undefined}
-                                    onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
+                                <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
+                                    <TextField label="Dátum návratu" type="date" fullWidth
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={trip.returnDate ?? ''}
+                                        error={!!trip.returnDate && trip.returnDate < trip.departureDate}
+                                        helperText={!!trip.returnDate && trip.returnDate < trip.departureDate ? 'Dátum návratu je pred dátumom odchodu' : undefined}
+                                        onChange={e => updateTrip(ti, 'returnDate', e.target.value)} />
+                                    <TimePickerField label="Čas návratu"
+                                        sx={{ width: { xs: '100%', sm: 140 }, flexShrink: 0 }}
+                                        value={trip.returnTime ?? ''}
+                                        onChange={v => updateTrip(ti, 'returnTime', v)} />
+                                </Stack>
 
                                 {trip.departureDate && trip.returnDate && trip.returnDate >= trip.departureDate && (() => {
                                     const days = Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departureDate).getTime()) / 86_400_000) + 1
