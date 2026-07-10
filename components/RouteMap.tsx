@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useTheme } from '@mui/material'
+import { Typography, useTheme } from '@mui/material'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -20,7 +20,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
 
         const map = L.map(containerRef.current, {
             zoomControl: false,
-            attributionControl: true,
+            attributionControl: false,
             dragging: true,
             scrollWheelZoom: true,
             doubleClickZoom: true,
@@ -30,9 +30,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
-            attribution: '© OpenStreetMap contributors',
         }).addTo(map)
-        map.attributionControl.setPrefix(false)
 
         // Tmavý režim: len dlaždice sa invertujú (trasa/značky si držia vlastné farby).
         if (isDark) {
@@ -66,14 +64,19 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
     }, [coordinates, isDark])
 
     return (
-        <div
-            ref={containerRef}
-            // Mapa je vnorená aj v klikateľnej karte (výber trasy) - pohyb/klik po mape
-            // nesmie zároveň spustiť výber tej karty.
-            onClick={e => e.stopPropagation()}
-            onDoubleClick={e => e.stopPropagation()}
-            style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', cursor: 'grab' }}
-        />
+        <div>
+            <div
+                ref={containerRef}
+                // Mapa je vnorená aj v klikateľnej karte (výber trasy) - pohyb/klik po mape
+                // nesmie zároveň spustiť výber tej karty.
+                onClick={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
+                style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', cursor: 'grab' }}
+            />
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.25, fontSize: 10, color: 'text.disabled', textAlign: 'right' }}>
+                © OpenStreetMap contributors
+            </Typography>
+        </div>
     )
 }
 
