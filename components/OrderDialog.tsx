@@ -11,7 +11,7 @@ import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTION
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
-    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime, countryFlag,
+    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmDistanceByCountry, calcOsmRouteOptions, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
@@ -1782,20 +1782,33 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         {routeOptions.options.map((opt, i) => {
                             const h = Math.floor(opt.durationMin / 60)
                             const m = opt.durationMin % 60
-                            const route = opt.countries
-                                .map(c => `${countryFlag(c.country)} ${allCountries.find(ac => ac.code === c.country)?.label ?? c.country}`.trim())
-                                .join(' → ')
                             return (
                                 <Card key={i} variant="outlined"
                                     sx={{ cursor: 'pointer', borderRadius: '14px', '&:hover': { borderColor: 'primary.main' } }}
                                     onClick={() => chooseRoute(opt)}>
                                     <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
                                             {opt.km} km · {h > 0 ? `${h} h ` : ''}{m} min
                                         </Typography>
-                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                            {route}
-                                        </Typography>
+                                        <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                            {opt.countries.map((c, ci) => (
+                                                <Fragment key={ci}>
+                                                    {ci > 0 && (
+                                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>→</Typography>
+                                                    )}
+                                                    <Box component="img"
+                                                        src={`https://flagcdn.com/24x18/${c.country.toLowerCase()}.png`}
+                                                        alt={c.country}
+                                                        width={20} height={15}
+                                                        sx={{ borderRadius: '2px', display: 'block', flexShrink: 0 }}
+                                                        onError={e => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+                                                    />
+                                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                        {allCountries.find(ac => ac.code === c.country)?.label ?? c.country}
+                                                    </Typography>
+                                                </Fragment>
+                                            ))}
+                                        </Stack>
                                     </CardContent>
                                 </Card>
                             )

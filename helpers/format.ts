@@ -17,14 +17,6 @@ export const transportShort = (t: string | null | undefined): string =>
 export const transportLabel = (t: string | null | undefined): string =>
     TRANSPORT_OPTIONS.find(o => o.value === t)?.label ?? t ?? '—'
 
-export const countryFlag = (code: string | null | undefined): string => {
-    if (!code) return ''
-    const cc = code.toUpperCase()
-    if (!/^[A-Z]{2}$/.test(cc)) return ''
-    const codePoints = [...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
-    return String.fromCodePoint(...codePoints)
-}
-
 export const addMinutesToTime = (time: string, minutes: number): string => {
     const [h, m] = time.split(':').map(Number)
     if (Number.isNaN(h) || Number.isNaN(m)) return time
