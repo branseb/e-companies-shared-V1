@@ -1853,9 +1853,6 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                 </Card>
                             )
                         })}
-                        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-                            Mapové podklady © OpenStreetMap contributors
-                        </Typography>
                     </Stack>
                 </DialogContent>
                 <DialogActions>

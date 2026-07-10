@@ -17,13 +17,13 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
         const latlngs: L.LatLngExpression[] = coordinates.map(([lon, lat]) => [lat, lon])
 
         const map = L.map(containerRef.current, {
-            zoomControl: false,
-            attributionControl: false,
-            dragging: false,
-            scrollWheelZoom: false,
-            doubleClickZoom: false,
-            boxZoom: false,
-            keyboard: false,
+            zoomControl: true,
+            attributionControl: true,
+            dragging: true,
+            scrollWheelZoom: true,
+            doubleClickZoom: true,
+            boxZoom: true,
+            keyboard: true,
         })
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -55,7 +55,16 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
         }
     }, [coordinates])
 
-    return <div ref={containerRef} style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden' }} />
+    return (
+        <div
+            ref={containerRef}
+            // Mapa je vnorená aj v klikateľnej karte (výber trasy) - pohyb/klik po mape
+            // nesmie zároveň spustiť výber tej karty.
+            onClick={e => e.stopPropagation()}
+            onDoubleClick={e => e.stopPropagation()}
+            style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', cursor: 'grab' }}
+        />
+    )
 }
 
 export default RouteMap
