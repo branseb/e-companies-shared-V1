@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import {
-    Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-    FormControlLabel, IconButton, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead,
+    Alert, Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider,
+    FormControlLabel, IconButton, Radio, RadioGroup, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead,
     TableRow, Tabs, TextField, Typography,
 } from '@mui/material'
 import { Add, Delete } from '@mui/icons-material'
-import type { StravneRates, StravneRatesEntry, CompanyRateConfig } from '../types'
+import type { StravneRates, StravneRatesEntry, CompanyRateConfig, TravelPreferences } from '../types'
+import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { fmtDate } from '../helpers'
+import { ChipList } from './PreferencesDialog'
 
 type RatesDialogProps = {
     onClose: () => void
@@ -14,11 +16,19 @@ type RatesDialogProps = {
     onSave: (rates: CompanyRateConfig) => void
     legalEntry?: StravneRatesEntry | null
     ratesHistory?: StravneRates | null
+    preferences?: TravelPreferences
+    onSavePreferences?: (prefs: TravelPreferences) => void
 }
 
-const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }: RatesDialogProps) => {
-    const [tab, setTab] = useState<'legal' | 'company'>('legal')
+const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory, preferences, onSavePreferences }: RatesDialogProps) => {
+    const [tab, setTab] = useState<'legal' | 'company' | 'approval' | 'preferences'>('legal')
     const [company, setCompany] = useState<CompanyRateConfig>(companyRates ?? {})
+    const [prefs, setPrefs] = useState<TravelPreferences>({
+        customPurposes: [...(preferences?.customPurposes ?? DEFAULT_TRAVEL_PREFERENCES.customPurposes)],
+        customPlaces:   [...(preferences?.customPlaces   ?? DEFAULT_TRAVEL_PREFERENCES.customPlaces)],
+    })
+    const updatePurposes = (customPurposes: string[]) => setPrefs(p => ({ ...p, customPurposes }))
+    const updatePlaces   = (customPlaces: string[])   => setPrefs(p => ({ ...p, customPlaces }))
 
     const sorted = ratesHistory ? [...ratesHistory].sort((a, b) => b.validFrom.localeCompare(a.validFrom)) : null
     const [selIdx, setSelIdx] = useState(0)
@@ -26,11 +36,13 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
 
     return (
         <Dialog open onClose={onClose} maxWidth="md" fullWidth sx={{ '& .MuiDialog-container': { alignItems: 'flex-start', pt: 2 } }}>
-            <DialogTitle>Sadzby stravného</DialogTitle>
+            <DialogTitle>Nastavenia</DialogTitle>
             <DialogContent sx={{ px: 0, pt: 0, minHeight: 480 }}>
                 <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 3, borderBottom: 1, borderColor: 'divider', mb: 2 }}>
                     <Tab label="Zákonné sadzby" value="legal" />
                     <Tab label="Firemné sadzby" value="company" />
+                    <Tab label="Schvaľovanie" value="approval" />
+                    {onSavePreferences && <Tab label="Predvoľby" value="preferences" />}
                 </Tabs>
 
                 <Stack sx={{ gap: 2, px: 3 }}>
@@ -279,11 +291,87 @@ const RatesDialog = ({ onClose, companyRates, onSave, legalEntry, ratesHistory }
                         </Stack>
                     )}
 
+                    {tab === 'approval' && (
+                        <Stack sx={{ gap: 2 }}>
+                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                Určuje, či sa cestovný príkaz musí pred cestou najprv poslať na schválenie, alebo či ho možno vyplniť naraz aj po návrate.
+                            </Typography>
+                            <RadioGroup
+                                value={company.approvalMode ?? 'direct'}
+                                onChange={e => setCompany(c => ({ ...c, approvalMode: e.target.value as 'preApproval' | 'direct' }))}
+                            >
+                                <FormControlLabel value="preApproval" sx={{ alignItems: 'flex-start', mb: 1.5, ml: 0 }}
+                                    control={<Radio sx={{ mt: -0.5 }} />}
+                                    label={
+                                        <Box>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>Vyžadovať schválenie vopred</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                Nový príkaz sa dá vytvoriť len so základnými údajmi (zamestnanec, cieľ, termín, účel) a odoslať na schválenie.
+                                                Doprava, náhrady a vyúčtovanie sa doplnia až po návrate zo schválenej cesty.
+                                            </Typography>
+                                        </Box>
+                                    }
+                                />
+                                <FormControlLabel value="direct" sx={{ alignItems: 'flex-start', ml: 0 }}
+                                    control={<Radio sx={{ mt: -0.5 }} />}
+                                    label={
+                                        <Box>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>Povoliť priame vytvorenie kompletného príkazu</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                Používateľ môže vyplniť všetky údaje naraz (často až po návrate) bez samostatného schvaľovania cesty vopred.
+                                            </Typography>
+                                        </Box>
+                                    }
+                                />
+                            </RadioGroup>
+                            {(company.approvalMode ?? 'direct') === 'direct' && (
+                                <Alert severity="info" sx={{ borderRadius: '10px' }}>
+                                    Zjednodušený režim nenahrádza zákonnú povinnosť vyslať zamestnanca na pracovnú cestu vopred.
+                                    Za súlad interného procesu s legislatívou zodpovedá zamestnávateľ.
+                                </Alert>
+                            )}
+                        </Stack>
+                    )}
+
+                    {tab === 'preferences' && (
+                        <Stack sx={{ gap: 0, mt: 1 }}>
+                            <Divider textAlign="left" sx={{ mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Vlastné účely cesty
+                                </Typography>
+                            </Divider>
+                            <ChipList
+                                items={prefs.customPurposes}
+                                onDelete={i => updatePurposes(prefs.customPurposes.filter((_, j) => j !== i))}
+                                onAdd={v => updatePurposes([...prefs.customPurposes, v])}
+                                inputLabel="Nový účel"
+                                inputPlaceholder="napr. Servisná obhliadka"
+                            />
+
+                            <Divider textAlign="left" sx={{ mt: 3, mb: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                    Vlastné miesta rokovania
+                                </Typography>
+                            </Divider>
+                            <ChipList
+                                items={prefs.customPlaces}
+                                onDelete={i => updatePlaces(prefs.customPlaces.filter((_, j) => j !== i))}
+                                onAdd={v => updatePlaces([...prefs.customPlaces, v])}
+                                inputLabel="Nové miesto"
+                                inputPlaceholder="napr. Senec, areál zákazníka"
+                            />
+                        </Stack>
+                    )}
+
                 </Stack>
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Zrušiť</Button>
-                {tab === 'company' && (
+                {tab === 'preferences' ? (
+                    onSavePreferences && (
+                        <Button variant="contained" onClick={() => { onSavePreferences(prefs); onClose() }}>Uložiť</Button>
+                    )
+                ) : (tab === 'company' || tab === 'approval') && (
                     <Button variant="contained" onClick={() => { onSave(company); onClose() }}>Uložiť</Button>
                 )}
             </DialogActions>

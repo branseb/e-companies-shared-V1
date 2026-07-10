@@ -27,6 +27,7 @@ type DialogProps = {
     ratesHistory: StravneRates
     employees: EmployeeRecord[]
     preferences?: TravelPreferences
+    approvalMode?: 'preApproval' | 'direct'
     onSave: (data: TravelOrderInput, attachmentTempId: string) => Promise<void>
     onClose: () => void
     onAddAttachment?: (tempId: string) => Promise<TravelOrderAttachment | null>
@@ -88,9 +89,10 @@ type PreviewProps = {
     balanceByCurrency: Record<string, number>
     ratesHistory: StravneRates
     mult: number
+    restricted: boolean
 }
 
-const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceByCurrency, balanceByCurrency, ratesHistory, mult }: PreviewProps) => {
+const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceByCurrency, balanceByCurrency, ratesHistory, mult, restricted }: PreviewProps) => {
     const trips = form.trips ?? []
     const transportLabel = TRANSPORT_OPTIONS.find(o => o.value === form.transportType)?.label ?? '—'
     const totalCar = (fuelCost ?? 0) + (amortization ?? 0)
@@ -133,8 +135,8 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
                                 {days && days > 1 ? ` · ${days} dni` : ''}
                             </Typography>
                         )}
-                        {km > 0 && <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>{km} km</Typography>}
-                        {Object.entries(stravneByCur).map(([c, amt]) => (
+                        {!restricted && km > 0 && <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>{km} km</Typography>}
+                        {!restricted && Object.entries(stravneByCur).map(([c, amt]) => (
                             <Typography key={c} variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                                 Stravné: {amt.toFixed(2)} {c}
                             </Typography>
@@ -143,16 +145,18 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
                 )
             })}
 
-            <SummaryCard icon={<DirectionsCar />} iconColor="#F59E0B" iconBg="rgba(245,158,11,0.12)" label="Doprava">
-                <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {transportLabel}{form.ecv ? ` · ${form.ecv}` : ''}
-                </Typography>
-                {totalCar > 0 && (
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Náhrada: {totalCar.toFixed(2)} EUR</Typography>
-                )}
-            </SummaryCard>
+            {!restricted && (
+                <SummaryCard icon={<DirectionsCar />} iconColor="#F59E0B" iconBg="rgba(245,158,11,0.12)" label="Doprava">
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {transportLabel}{form.ecv ? ` · ${form.ecv}` : ''}
+                    </Typography>
+                    {totalCar > 0 && (
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Náhrada: {totalCar.toFixed(2)} EUR</Typography>
+                    )}
+                </SummaryCard>
+            )}
 
-            {Object.keys(totalsByCurrency).length > 0 && (
+            {!restricted && Object.keys(totalsByCurrency).length > 0 && (
                 <SummaryCard icon={<Restaurant />} iconColor="#06B6D4" iconBg="rgba(6,182,212,0.12)" label="Predpoklad náhrad">
                     {Object.entries(totalsByCurrency).map(([c, amt]) => (
                         <Typography key={c} variant="body2" sx={{ fontWeight: 800, color: 'primary.main' }}>{amt.toFixed(2)} {c}</Typography>
@@ -174,10 +178,15 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
 
 // ── Main dialog ──────────────────────────────────────────────────────────────
 
-const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, onSave, onClose, onAddAttachment, onAddAttachmentFromPath, onDeleteAttachment, onOpenAttachment, onReadAttachment }: DialogProps) => {
+const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, approvalMode = 'direct', onSave, onClose, onAddAttachment, onAddAttachmentFromPath, onDeleteAttachment, onOpenAttachment, onReadAttachment }: DialogProps) => {
     const isMobile = useMediaQuery('(max-width:599px)')
     const prefs = preferences ?? DEFAULT_TRAVEL_PREFERENCES
     const [form, setForm] = useState<TravelOrderInput>(initial)
+    // Režim "preApproval": kým príkaz nie je schválený, formulár ukáže len
+    // základné údaje (Zamestnanec, Cesta) - doprava a náhrady sa dopĺňajú
+    // až po schválení a návrate z cesty.
+    const restricted = approvalMode === 'preApproval' && (form.status === 'draft' || form.status === 'planned')
+    const effectiveSteps = restricted ? STEPS.slice(0, 2) : STEPS
     const [saving, setSaving] = useState(false)
     const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
@@ -504,7 +513,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // ── Save ─────────────────────────────────────────────────────────────────
 
     const handleSave = async (statusOverride?: string) => {
-        const errors = validateForm(statusOverride === 'planned')
+        const errors = validateForm(restricted || statusOverride === 'planned')
         if (errors.length > 0) { setValidationErrors(errors); return }
         setValidationErrors([])
         setSaving(true)
@@ -889,7 +898,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     )
                                 })()}
 
-                                {trip.destination && trip.departureDate && trip.returnDate && (
+                                {!restricted && trip.destination && trip.departureDate && trip.returnDate && (
                                     <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
                                         <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
                                             disabled={loadingGenTi === ti}
@@ -915,20 +924,22 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     </Stack>
                                 )}
 
-                                <SegmentEditor
-                                    segments={trip.segments}
-                                    tripDate={trip.departureDate}
-                                    transport={form.transportType ?? 'car'}
-                                    defaultCountry={trip.country ?? 'SK'}
-                                    ratesHistory={ratesHistory}
-                                    allCountries={allCountries}
-                                    exchangeRates={form.exchangeRates}
-                                    onChange={segs => updateTrip(ti, 'segments', segs)}
-                                    vreckoveLimit={vreckoveLimit > 0 ? vreckoveLimit : undefined}
-                                    vreckoveLimitCur={vreckoveLimitCur}
-                                />
+                                {!restricted && (
+                                    <SegmentEditor
+                                        segments={trip.segments}
+                                        tripDate={trip.departureDate}
+                                        transport={form.transportType ?? 'car'}
+                                        defaultCountry={trip.country ?? 'SK'}
+                                        ratesHistory={ratesHistory}
+                                        allCountries={allCountries}
+                                        exchangeRates={form.exchangeRates}
+                                        onChange={segs => updateTrip(ti, 'segments', segs)}
+                                        vreckoveLimit={vreckoveLimit > 0 ? vreckoveLimit : undefined}
+                                        vreckoveLimitCur={vreckoveLimitCur}
+                                    />
+                                )}
 
-                                {daily.length > 0 && (
+                                {!restricted && daily.length > 0 && (
                                     <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
                                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>Stravné:</Typography>
                                         {daily.map((ds, di) => (
@@ -1444,14 +1455,16 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         )
     }
 
-    const stepContent = [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4]
+    const stepContent = restricted
+        ? [renderStep0, renderStep1]
+        : [renderStep0, renderStep1, renderStep2, renderStep3, renderStep4]
 
     // ── Step dots (mobile / tablet) ──────────────────────────────────────────
 
     const StepDots = () => (
         <Box sx={{ px: 2, pb: 2 }}>
             <Stack direction="row" sx={{ alignItems: 'center', mb: 0.75 }}>
-                {STEPS.map((_, i) => (
+                {effectiveSteps.map((_, i) => (
                     <Fragment key={i}>
                         <Box
                             onClick={() => { if (i < activeStep) goTo(i) }}
@@ -1468,7 +1481,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         >
                             {i + 1}
                         </Box>
-                        {i < STEPS.length - 1 && (
+                        {i < effectiveSteps.length - 1 && (
                             <Box sx={{
                                 flex: 1, height: 2, mx: 0.5,
                                 bgcolor: i < activeStep ? 'primary.main' : 'action.disabledBackground',
@@ -1479,7 +1492,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 ))}
             </Stack>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                Krok {activeStep + 1} z {STEPS.length} — {STEPS[activeStep]}
+                Krok {activeStep + 1} z {effectiveSteps.length} — {effectiveSteps[activeStep]}
             </Typography>
         </Box>
     )
@@ -1502,9 +1515,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     sx={{ flex: '1 1 90px', borderRadius: '12px', py: 1.2 }}>
                     Späť
                 </Button>
-                {activeStep < STEPS.length - 1 ? (
+                {activeStep < effectiveSteps.length - 1 ? (
                     <>
-                        {activeStep >= 1 && (isNew || form.status === 'planned') && (
+                        {!restricted && activeStep >= 1 && (isNew || form.status === 'planned') && (
                             <Button variant="outlined" color="secondary"
                                 onClick={() => handleSave('planned')}
                                 disabled={saving || !canSave}
@@ -1517,6 +1530,21 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             disabled={!canNext}
                             sx={{ flex: '2 1 160px', borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
                             Pokračovať
+                        </Button>
+                    </>
+                ) : restricted ? (
+                    <>
+                        <Button variant="outlined"
+                            onClick={() => handleSave('draft')}
+                            disabled={saving || !canSave}
+                            sx={{ flex: '1 1 100px', borderRadius: '12px', py: 1.2 }}>
+                            Koncept
+                        </Button>
+                        <Button variant="contained" color="secondary"
+                            onClick={() => handleSave('planned')}
+                            disabled={saving || !canSave}
+                            sx={{ flex: '1.5 1 180px', borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
+                            {saving ? 'Ukladám…' : 'Odoslať na schválenie'}
                         </Button>
                     </>
                 ) : (
@@ -1597,7 +1625,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         <ArrowBack />
                     </IconButton>
                     <Typography variant="h6" sx={{ flex: 1, fontWeight: 700, fontSize: 17 }}>
-                        {isNew ? 'Nový cestovný príkaz' : 'Upraviť príkaz'}
+                        {restricted
+                            ? (isNew ? 'Návrh pracovnej cesty' : 'Upraviť návrh pracovnej cesty')
+                            : (isNew ? 'Nový cestovný príkaz' : 'Upraviť príkaz')}
                     </Typography>
                 </Toolbar>
 
@@ -1609,7 +1639,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 {/* Full MUI stepper — desktop only */}
                 <Box sx={{ display: { xs: 'none', md: 'block' }, px: 3, pb: 2 }}>
                     <Stepper activeStep={activeStep} sx={{ '& .MuiStepLabel-label': { fontSize: 13 } }}>
-                        {STEPS.map((label, i) => (
+                        {effectiveSteps.map((label, i) => (
                             <Step key={label}
                                 sx={{ cursor: i < activeStep ? 'pointer' : 'default' }}
                                 onClick={() => { if (i < activeStep) goTo(i) }}>
@@ -1655,6 +1685,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         balanceByCurrency={balanceByCurrency}
                         ratesHistory={ratesHistory}
                         mult={mult}
+                        restricted={restricted}
                     />
                 </Box>
             </Box>

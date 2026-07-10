@@ -32,6 +32,7 @@ export type CompanyRateConfig = {
     meal18plus?: number | null
     foreign?: Record<string, number | null>
     useLegalRates?: boolean
+    approvalMode?: 'preApproval' | 'direct'
 }
 
 export type EmployeeRateConfig = {

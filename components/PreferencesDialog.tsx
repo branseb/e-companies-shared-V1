@@ -12,7 +12,7 @@ type Props = {
     onClose: () => void
 }
 
-const ChipList = ({
+export const ChipList = ({
     items, onDelete, inputLabel, inputPlaceholder, onAdd,
 }: {
     items: string[]

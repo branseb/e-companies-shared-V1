@@ -17,7 +17,6 @@ import {
 import OrderDialog from './OrderDialog'
 import EmployeesDialog from './EmployeesDialog'
 import RatesDialog from './RatesDialog'
-import PreferencesDialog from './PreferencesDialog'
 import { TravelOrderDetailPanel } from './TravelOrderDetailPanel'
 
 export const TravelOrdersWidget = ({
@@ -46,7 +45,6 @@ export const TravelOrdersWidget = ({
     })
     const [ratesOpen, setRatesOpen] = useState(false)
     const [empOpen, setEmpOpen] = useState(false)
-    const [prefsOpen, setPrefsOpen] = useState(false)
     const effectivePrefs: TravelPreferences = prefsProp ?? DEFAULT_TRAVEL_PREFERENCES
     const [filterStatus, setFilterStatus] = useState('all')
     const [search, setSearch] = useState('')
@@ -194,11 +192,8 @@ export const TravelOrdersWidget = ({
                     {onEmployeeCreate && (
                         <Button size="small" variant="outlined" onClick={() => setEmpOpen(true)}>Zamestnanci</Button>
                     )}
-                    {onPreferencesChange && (
-                        <Button size="small" variant="outlined" onClick={() => setPrefsOpen(true)}>Predvolby</Button>
-                    )}
                     {onCompanyRatesChange && (
-                        <Button size="small" onClick={() => setRatesOpen(true)}>Firemné sadzby</Button>
+                        <Button size="small" onClick={() => setRatesOpen(true)}>Nastavenia</Button>
                     )}
                     {!readOnly && (
                         <Button variant="contained" startIcon={<Add />} size="small" onClick={openNew}>
@@ -412,6 +407,7 @@ export const TravelOrdersWidget = ({
                     ratesHistory={effectiveRates}
                     employees={employees}
                     preferences={effectivePrefs}
+                    approvalMode={companyRates?.approvalMode ?? 'direct'}
                     onSave={handleSave}
                     onClose={() => setDialog(null)}
                     onAddAttachment={onAddAttachment ? (tempId) => onAddAttachment(tempId) : undefined}
@@ -438,13 +434,8 @@ export const TravelOrdersWidget = ({
                     onSave={r => { onCompanyRatesChange(r); setRatesOpen(false) }}
                     legalEntry={getRatesForDate(effectiveRates, new Date().toISOString().split('T')[0])}
                     ratesHistory={effectiveRates}
-                />
-            )}
-            {prefsOpen && onPreferencesChange && (
-                <PreferencesDialog
                     preferences={effectivePrefs}
-                    onSave={p => { onPreferencesChange(p); setPrefsOpen(false) }}
-                    onClose={() => setPrefsOpen(false)}
+                    onSavePreferences={onPreferencesChange ? p => { onPreferencesChange(p); setRatesOpen(false) } : undefined}
                 />
             )}
         </Box>
