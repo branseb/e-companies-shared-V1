@@ -11,7 +11,8 @@ type Props = {
 // Malá needitovateľná mapa s vykreslenou trasou. Dlaždice © OpenStreetMap contributors.
 const RouteMap = ({ coordinates, height = 140 }: Props) => {
     const containerRef = useRef<HTMLDivElement>(null)
-    const isDark = useTheme().palette.mode === 'dark'
+    const theme = useTheme()
+    const isDark = theme.palette.mode === 'dark'
 
     useEffect(() => {
         if (!containerRef.current || coordinates.length === 0) return
@@ -71,7 +72,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
                 // nesmie zároveň spustiť výber tej karty.
                 onClick={e => e.stopPropagation()}
                 onDoubleClick={e => e.stopPropagation()}
-                style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', cursor: 'grab' }}
+                style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', cursor: 'grab', backgroundColor: theme.palette.background.paper }}
             />
             <Typography variant="caption" sx={{ display: 'block', mt: 0.25, fontSize: 10, color: 'text.disabled', textAlign: 'right' }}>
                 © OpenStreetMap contributors
