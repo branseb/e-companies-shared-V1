@@ -17,7 +17,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
         const latlngs: L.LatLngExpression[] = coordinates.map(([lon, lat]) => [lat, lon])
 
         const map = L.map(containerRef.current, {
-            zoomControl: true,
+            zoomControl: false,
             attributionControl: true,
             dragging: true,
             scrollWheelZoom: true,
