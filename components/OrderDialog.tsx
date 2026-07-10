@@ -14,7 +14,7 @@ import {
     emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
-import { calcOsmDistanceByCountry, calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
+import { calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
 import RouteMap from './RouteMap'
@@ -403,16 +403,17 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             const destPoint = trip.destinationLat != null && trip.destinationLon != null
                 ? { lat: trip.destinationLat, lon: trip.destinationLon }
                 : trip.destination.trim()
-            const result = await calcOsmDistanceByCountry(trip.departureLocation.trim(), destPoint)
-            if (!result) return
+            const options = await calcOsmRouteOptions(trip.departureLocation.trim(), destPoint)
+            const route = options?.[0]
+            if (!route) return
             const kmByCountry: Record<string, number> = {}
-            for (const { country, km } of result) kmByCountry[country.toUpperCase()] = km
+            for (const { country, km } of route.countries) kmByCountry[country.toUpperCase()] = km
             const updated = trip.segments.map(seg => {
                 const c = (seg.country ?? trip.country ?? 'SK').toUpperCase()
                 const km = kmByCountry[c]
                 return km != null ? { ...seg, km } : seg
             })
-            updateTrip(ti, 'segments', updated)
+            updateTrip(ti, 'segments', updated, { routeCoordinates: route.coordinates })
         } finally {
             setLoadingKmTi(null)
         }
@@ -511,10 +512,11 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 ]
             }
         } else {
+            const domKm = route?.find(r => r.country === 'SK')?.km ?? null
             segs = [
-                mkSeg(depDate, depLoc, depTime,     dest,   arrToTime, 'SK'),
+                mkSeg(depDate, depLoc, depTime,     dest,   arrToTime, 'SK', domKm),
                 ...midSegs('SK'),
-                mkSeg(retDate, dest,   retFromTime, retLoc, retTime,   'SK'),
+                mkSeg(retDate, dest,   retFromTime, retLoc, retTime,   'SK', domKm),
             ]
         }
 
@@ -535,11 +537,8 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         if (!trip) return
         const depLoc = trip.departureLocation ?? ''
         const dest = trip.destination
-        const tripCountryCode = trip.country ?? 'SK'
-        const destCtry = allCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
-        const foreign = destCtry.code !== 'SK'
 
-        if (!foreign || !depLoc.trim() || !dest.trim()) {
+        if (!depLoc.trim() || !dest.trim()) {
             buildSegmentsFromRoute(ti, null)
             return
         }
