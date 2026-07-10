@@ -30,7 +30,9 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
+            attribution: '© OpenStreetMap contributors',
         }).addTo(map)
+        map.attributionControl.setPrefix(false)
 
         // Tmavý režim: len dlaždice sa invertujú (trasa/značky si držia vlastné farby).
         if (isDark) {
