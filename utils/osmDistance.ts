@@ -99,7 +99,12 @@ const splitByCountry = async (
 }
 
 export type OsmCountryLeg = { country: string; km: number; durationMin: number }
-export type OsmRouteOption = { km: number; durationMin: number; countries: OsmCountryLeg[] }
+export type OsmRouteOption = {
+    km: number
+    durationMin: number
+    countries: OsmCountryLeg[]
+    coordinates: [number, number][] // GeoJSON [lon, lat][] - priebeh trasy pre mapu
+}
 
 // Spracuje jednu OSRM trasu (geometria + trvanie) na rozpad po krajinách.
 const breakdownRoute = async (route: {
@@ -139,7 +144,7 @@ const breakdownRoute = async (route: {
         ? [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
         : await splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
 
-    return { km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60), countries }
+    return { km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60), countries, coordinates: coords }
 }
 
 // Vráti všetky alternatívne trasy (OSRM alternatives=true), každú s km, trvaním a rozpadom po krajinách.

@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "./index.ts",
   "dependencies": {
-    "jspdf": "^2.5.1"
+    "jspdf": "^2.5.1",
+    "leaflet": "^1.9.4"
   },
   "peerDependencies": {
     "firebase": ">=10.0.0",
@@ -15,6 +16,7 @@
     "@mui/icons-material": "^9.0.1",
     "@mui/material": "^9.0.1",
     "@mui/x-date-pickers": "^9.5.0",
+    "@types/leaflet": "^1.9.21",
     "@types/react": "^19.0.0",
     "dayjs": "^1.11.21",
     "firebase": "^12.14.0",

@@ -17,6 +17,7 @@ import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmDistanceByCountry, calcOsmRouteOptions, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
+import RouteMap from './RouteMap'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
@@ -1784,8 +1785,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             const m = opt.durationMin % 60
                             return (
                                 <Card key={i} variant="outlined"
-                                    sx={{ cursor: 'pointer', borderRadius: '14px', '&:hover': { borderColor: 'primary.main' } }}
+                                    sx={{ cursor: 'pointer', borderRadius: '14px', overflow: 'hidden', '&:hover': { borderColor: 'primary.main' } }}
                                     onClick={() => chooseRoute(opt)}>
+                                    <RouteMap coordinates={opt.coordinates} />
                                     <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                                         <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
                                             {opt.km} km · {h > 0 ? `${h} h ` : ''}{m} min
@@ -1813,6 +1815,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                 </Card>
                             )
                         })}
+                        <Typography variant="caption" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+                            Mapové podklady © OpenStreetMap contributors
+                        </Typography>
                     </Stack>
                 </DialogContent>
                 <DialogActions>
