@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTheme } from '@mui/material'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -10,6 +11,7 @@ type Props = {
 // Malá needitovateľná mapa s vykreslenou trasou. Dlaždice © OpenStreetMap contributors.
 const RouteMap = ({ coordinates, height = 140 }: Props) => {
     const containerRef = useRef<HTMLDivElement>(null)
+    const isDark = useTheme().palette.mode === 'dark'
 
     useEffect(() => {
         if (!containerRef.current || coordinates.length === 0) return
@@ -29,6 +31,12 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 18,
         }).addTo(map)
+
+        // Tmavý režim: len dlaždice sa invertujú (trasa/značky si držia vlastné farby).
+        if (isDark) {
+            const tilePane = map.getPane('tilePane')
+            if (tilePane) tilePane.style.filter = 'invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)'
+        }
 
         const line = L.polyline(latlngs, { color: '#1976d2', weight: 3 }).addTo(map)
         L.circleMarker(latlngs[0], { radius: 5, color: '#fff', weight: 2, fillColor: '#22C55E', fillOpacity: 1 }).addTo(map)
@@ -53,7 +61,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
             resizeObserver.disconnect()
             map.remove()
         }
-    }, [coordinates])
+    }, [coordinates, isDark])
 
     return (
         <div
