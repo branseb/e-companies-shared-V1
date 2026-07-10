@@ -14,7 +14,7 @@ import {
     emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
-import { calcOsmDistanceByCountry, calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
+import { calcOsmDistanceByCountry, calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
 import RouteMap from './RouteMap'
@@ -192,7 +192,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
     const [routeOptions, setRouteOptions] = useState<{ ti: number; options: OsmRouteOption[] } | null>(null)
-    const [osmDestOptions, setOsmDestOptions] = useState<string[]>([])
+    const [osmDestSuggestions, setOsmDestSuggestions] = useState<OsmPlaceSuggestion[]>([])
     const destSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -369,10 +369,10 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     // ── Trip handlers ────────────────────────────────────────────────────────
 
-    const updateTrip = (ti: number, field: keyof Trip, value: Trip[typeof field]) => {
+    const updateTrip = (ti: number, field: keyof Trip, value: Trip[typeof field], extra?: Partial<Trip>) => {
         const trips = [...(form.trips ?? [])]
         const old = trips[ti]
-        const updated: Trip = { ...old, [field]: value }
+        const updated: Trip = { ...old, [field]: value, ...extra }
         if (field === 'departureLocation' && (!old.returnLocation || old.returnLocation === old.departureLocation))
             updated.returnLocation = value as string
         if (field === 'departureDate' && old.returnDate === old.departureDate)
@@ -383,10 +383,10 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     const searchDestination = (query: string) => {
         if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
-        if (query.trim().length < 3) { setOsmDestOptions([]); return }
+        if (query.trim().length < 3) { setOsmDestSuggestions([]); return }
         destSearchTimer.current = setTimeout(async () => {
             const results = await searchOsmPlaces(query)
-            setOsmDestOptions(results)
+            setOsmDestSuggestions(results)
         }, 400)
     }
 
@@ -827,7 +827,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     options={[...new Set([
                                         ...prefs.customPlaces,
                                         ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []),
-                                        ...osmDestOptions,
+                                        ...osmDestSuggestions.map(s => s.label),
                                     ])]}
                                     inputValue={trip.destination}
                                     onInputChange={(_e, val, reason) => {
@@ -836,13 +836,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                         searchDestination(val)
                                     }}
                                     onChange={(_e, val) => {
-                                        if (typeof val === 'string') updateTrip(ti, 'destination', val)
+                                        if (typeof val !== 'string') return
+                                        const match = osmDestSuggestions.find(s => s.label === val)
+                                        if (match) {
+                                            updateTrip(ti, 'destination', match.shortLabel, match.countryCode ? { country: match.countryCode } : undefined)
+                                        } else {
+                                            updateTrip(ti, 'destination', val)
+                                        }
                                     }}
                                     filterOptions={(options, { inputValue }) => {
                                         const q = norm(inputValue)
+                                        const osmLabels = osmDestSuggestions.map(s => s.label)
                                         return options.filter(o =>
                                             o !== trip.departureLocation &&
-                                            (osmDestOptions.includes(o) || q === '' || norm(o).includes(q))
+                                            (osmLabels.includes(o) || q === '' || norm(o).includes(q))
                                         )
                                     }}
                                     renderInput={params => (

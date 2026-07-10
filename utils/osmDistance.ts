@@ -25,17 +25,44 @@ const geocode = async (query: string): Promise<{ lat: number; lon: number } | nu
     }
 }
 
+export type OsmPlaceSuggestion = { label: string; shortLabel: string; countryCode: string | null }
+
 // Vyhľadá miesta zodpovedajúce zadanému textu (pre autocomplete pri písaní).
-export const searchOsmPlaces = async (query: string): Promise<string[]> => {
+// `label` je plný názov (na rozlíšenie v zozname), `shortLabel` len obec/mesto
+// (na vyplnenie poľa po výbere), `countryCode` na automatické predvyplnenie krajiny.
+export const searchOsmPlaces = async (query: string): Promise<OsmPlaceSuggestion[]> => {
     const q = query.trim()
     if (q.length < 3) return []
     try {
-        const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=0&accept-language=sk`
+        const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&accept-language=sk`
         const r = await fetch(url, { headers: { 'User-Agent': APP_UA } })
         if (!r.ok) return []
         const data = await r.json()
         if (!Array.isArray(data)) return []
-        return data.map((d: { display_name: string }) => d.display_name).filter(Boolean)
+        type NominatimResult = {
+            display_name: string
+            address?: {
+                country_code?: string
+                city?: string
+                town?: string
+                village?: string
+                municipality?: string
+                hamlet?: string
+                county?: string
+            }
+        }
+        return data
+            .map((d: NominatimResult) => {
+                const addr = d.address ?? {}
+                const shortLabel = addr.city ?? addr.town ?? addr.village ?? addr.municipality ?? addr.hamlet
+                    ?? addr.county ?? d.display_name.split(',')[0].trim()
+                return {
+                    label: d.display_name,
+                    shortLabel,
+                    countryCode: addr.country_code ? addr.country_code.toUpperCase() : null,
+                }
+            })
+            .filter((s: OsmPlaceSuggestion) => Boolean(s.label))
     } catch {
         return []
     }
