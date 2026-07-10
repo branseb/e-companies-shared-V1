@@ -315,7 +315,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     // ── Validation ───────────────────────────────────────────────────────────
 
-    const validateForm = (): string[] => {
+    const validateForm = (minimal = false): string[] => {
         const errors: string[] = []
         if (!form.employee.trim()) errors.push('Chýba meno zamestnanca.')
         if (!form.trips?.length) errors.push('Musí byť zadaná aspoň jedna cesta.')
@@ -324,6 +324,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             if (trip.returnDate && trip.returnDate < trip.departureDate)
                 errors.push(`Cesta ${i + 1}: dátum návratu (${trip.returnDate}) je pred dátumom odchodu (${trip.departureDate}).`)
         }
+        // Naplánovaný príkaz sa vytvára pred cestou - poznáme len základné údaje,
+        // detaily dopravy a náhrad sa dopĺňajú až po návrate.
+        if (minimal) return errors
         if (form.transportType === 'car' && !form.ecv?.trim())
             errors.push('Vlastné auto (AUV) vyžaduje vyplnené EČV.')
         if ((form.trips ?? []).flatMap(t => t.segments).some(s => (s.km ?? 0) < 0))
@@ -501,7 +504,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // ── Save ─────────────────────────────────────────────────────────────────
 
     const handleSave = async (statusOverride?: string) => {
-        const errors = validateForm()
+        const errors = validateForm(statusOverride === 'planned')
         if (errors.length > 0) { setValidationErrors(errors); return }
         setValidationErrors([])
         setSaving(true)
@@ -1492,32 +1495,48 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     ? 'linear-gradient(rgba(255,255,255,0.09), rgba(255,255,255,0.09))'
                     : 'none',
             })}>
-            <Stack direction="row" sx={{ gap: 1.5 }}>
+            <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
                 <Button variant="outlined"
                     onClick={() => goTo(activeStep - 1)}
                     disabled={activeStep === 0 || saving}
-                    sx={{ flex: 1, borderRadius: '12px', py: 1.2 }}>
+                    sx={{ flex: '1 1 90px', borderRadius: '12px', py: 1.2 }}>
                     Späť
                 </Button>
                 {activeStep < STEPS.length - 1 ? (
-                    <Button variant="contained"
-                        onClick={() => goTo(activeStep + 1)}
-                        disabled={!canNext}
-                        sx={{ flex: 2, borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
-                        Pokračovať
-                    </Button>
+                    <>
+                        {activeStep >= 1 && (isNew || form.status === 'planned') && (
+                            <Button variant="outlined" color="secondary"
+                                onClick={() => handleSave('planned')}
+                                disabled={saving || !canSave}
+                                sx={{ flex: '1 1 120px', borderRadius: '12px', py: 1.2 }}>
+                                Naplánovať
+                            </Button>
+                        )}
+                        <Button variant="contained"
+                            onClick={() => goTo(activeStep + 1)}
+                            disabled={!canNext}
+                            sx={{ flex: '2 1 160px', borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
+                            Pokračovať
+                        </Button>
+                    </>
                 ) : (
                     <>
+                        <Button variant="outlined" color="secondary"
+                            onClick={() => handleSave('planned')}
+                            disabled={saving || !canSave}
+                            sx={{ flex: '1 1 120px', borderRadius: '12px', py: 1.2 }}>
+                            Naplánovať
+                        </Button>
                         <Button variant="outlined"
                             onClick={() => handleSave('draft')}
                             disabled={saving || !canSave}
-                            sx={{ flex: 1, borderRadius: '12px', py: 1.2 }}>
+                            sx={{ flex: '1 1 100px', borderRadius: '12px', py: 1.2 }}>
                             Koncept
                         </Button>
                         <Button variant="contained"
                             onClick={() => handleSave('navrh')}
                             disabled={saving || !canSave}
-                            sx={{ flex: 1.5, borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
+                            sx={{ flex: '1.5 1 140px', borderRadius: '12px', py: 1.2, fontWeight: 700 }}>
                             {saving ? 'Ukladám…' : 'Odoslať'}
                         </Button>
                     </>

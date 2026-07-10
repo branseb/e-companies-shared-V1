@@ -36,18 +36,20 @@ export const COUNTRY_OPTIONS = [
 
 
 export const STATUS_OPTIONS = [
+    { value: 'planned',   label: 'Naplánovaný' },
     { value: 'navrh',     label: 'Vytvorený' },
     { value: 'approved',  label: 'Schválený' },
     { value: 'settled',   label: 'Vyúčtovaný' },
     { value: 'processed', label: 'Spracovaný' },
 ]
 
-export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'primary' | 'info' | 'success' | 'warning' }> = {
-    draft:     { label: 'Koncept',     color: 'default' },
-    navrh:     { label: 'Vytvorený',   color: 'warning' },
-    approved:  { label: 'Schválený',   color: 'info' },
-    settled:   { label: 'Vyúčtovaný', color: 'success' },
-    processed: { label: 'Spracovaný', color: 'primary' },
+export const STATUS_MAP: Record<string, { label: string; color: 'default' | 'primary' | 'secondary' | 'info' | 'success' | 'warning' }> = {
+    draft:     { label: 'Koncept',      color: 'default' },
+    planned:   { label: 'Naplánovaný',  color: 'secondary' },
+    navrh:     { label: 'Vytvorený',    color: 'warning' },
+    approved:  { label: 'Schválený',    color: 'info' },
+    settled:   { label: 'Vyúčtovaný',  color: 'success' },
+    processed: { label: 'Spracovaný',  color: 'primary' },
 }
 
 export const EXPENSE_TYPES = [
