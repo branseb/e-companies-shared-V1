@@ -12,7 +12,9 @@ const BDC = 'https://api.bigdatacloud.net/data/reverse-geocode-client'
 
 const APP_UA = 'e-companies/1.0 (internal; https://github.com/your-org/e-companies)'
 
-const geocode = async (query: string): Promise<{ lat: number; lon: number } | null> => {
+export type GeoPoint = { lat: number; lon: number }
+
+const geocode = async (query: string): Promise<GeoPoint | null> => {
     const url = `${NOMINATIM}?q=${encodeURIComponent(query)}&format=json&limit=1`
     try {
         const r = await fetch(url, { headers: { 'User-Agent': APP_UA } })
@@ -25,11 +27,16 @@ const geocode = async (query: string): Promise<{ lat: number; lon: number } | nu
     }
 }
 
-export type OsmPlaceSuggestion = { label: string; shortLabel: string; countryCode: string | null }
+// Ak už máme presné súradnice (vybrané z OSM návrhu), použi ich - inak geokóduj text.
+const resolvePoint = (input: string | GeoPoint): Promise<GeoPoint | null> =>
+    typeof input === 'string' ? geocode(input) : Promise.resolve(input)
+
+export type OsmPlaceSuggestion = { label: string; shortLabel: string; countryCode: string | null; lat: number; lon: number }
 
 // Vyhľadá miesta zodpovedajúce zadanému textu (pre autocomplete pri písaní).
 // `label` je plný názov (na rozlíšenie v zozname), `shortLabel` len obec/mesto
-// (na vyplnenie poľa po výbere), `countryCode` na automatické predvyplnenie krajiny.
+// (na vyplnenie poľa po výbere), `countryCode` na automatické predvyplnenie krajiny,
+// `lat`/`lon` na uloženie presnej polohy (presnejší prepočet km/trasy neskôr).
 export const searchOsmPlaces = async (query: string): Promise<OsmPlaceSuggestion[]> => {
     const q = query.trim()
     if (q.length < 3) return []
@@ -41,6 +48,8 @@ export const searchOsmPlaces = async (query: string): Promise<OsmPlaceSuggestion
         if (!Array.isArray(data)) return []
         type NominatimResult = {
             display_name: string
+            lat: string
+            lon: string
             address?: {
                 country_code?: string
                 city?: string
@@ -60,9 +69,11 @@ export const searchOsmPlaces = async (query: string): Promise<OsmPlaceSuggestion
                     label: d.display_name,
                     shortLabel,
                     countryCode: addr.country_code ? addr.country_code.toUpperCase() : null,
+                    lat: parseFloat(d.lat),
+                    lon: parseFloat(d.lon),
                 }
             })
-            .filter((s: OsmPlaceSuggestion) => Boolean(s.label))
+            .filter((s: OsmPlaceSuggestion) => Boolean(s.label) && !Number.isNaN(s.lat) && !Number.isNaN(s.lon))
     } catch {
         return []
     }
@@ -191,8 +202,12 @@ const breakdownRoute = async (route: {
 }
 
 // Vráti všetky alternatívne trasy (OSRM alternatives=true), každú s km, trvaním a rozpadom po krajinách.
-export const calcOsmRouteOptions = async (from: string, to: string): Promise<OsmRouteOption[] | null> => {
-    const [a, b] = await Promise.all([geocode(from), geocode(to)])
+// `from`/`to` môžu byť text (geokóduje sa) alebo už známe súradnice (presnejšie, bez geokódovania).
+export const calcOsmRouteOptions = async (
+    from: string | GeoPoint,
+    to: string | GeoPoint
+): Promise<OsmRouteOption[] | null> => {
+    const [a, b] = await Promise.all([resolvePoint(from), resolvePoint(to)])
     if (!a || !b) return null
     try {
         const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration&alternatives=true`
@@ -210,8 +225,8 @@ export const calcOsmRouteOptions = async (from: string, to: string): Promise<Osm
 }
 
 export const calcOsmDistanceByCountry = async (
-    from: string,
-    to: string
+    from: string | GeoPoint,
+    to: string | GeoPoint
 ): Promise<OsmCountryLeg[] | null> => {
     const options = await calcOsmRouteOptions(from, to)
     return options?.[0]?.countries ?? null

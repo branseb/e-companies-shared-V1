@@ -142,6 +142,11 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
                                 Stravné: {amt.toFixed(2)} {c}
                             </Typography>
                         ))}
+                        {!restricted && trip.routeCoordinates && trip.routeCoordinates.length > 0 && (
+                            <Box sx={{ mt: 1 }}>
+                                <RouteMap coordinates={trip.routeCoordinates} height={110} />
+                            </Box>
+                        )}
                     </SummaryCard>
                 )
             })}
@@ -395,7 +400,10 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         if (!trip?.departureLocation?.trim() || !trip?.destination?.trim()) return
         setLoadingKmTi(ti)
         try {
-            const result = await calcOsmDistanceByCountry(trip.departureLocation.trim(), trip.destination.trim())
+            const destPoint = trip.destinationLat != null && trip.destinationLon != null
+                ? { lat: trip.destinationLat, lon: trip.destinationLon }
+                : trip.destination.trim()
+            const result = await calcOsmDistanceByCountry(trip.departureLocation.trim(), destPoint)
             if (!result) return
             const kmByCountry: Record<string, number> = {}
             for (const { country, km } of result) kmByCountry[country.toUpperCase()] = km
@@ -424,9 +432,10 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         return times
     }
 
-    const buildSegmentsFromRoute = (ti: number, route: OsmCountryLeg[] | null) => {
+    const buildSegmentsFromRoute = (ti: number, routeOption: OsmRouteOption | null) => {
         const trip = (form.trips ?? [])[ti]
         if (!trip) return
+        const route: OsmCountryLeg[] | null = routeOption?.countries ?? null
         const trans     = form.transportType ?? 'car'
         const depLoc    = trip.departureLocation ?? ''
         const retLoc    = trip.returnLocation ?? depLoc
@@ -512,6 +521,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const trips = [...(form.trips ?? [])]
         trips[ti] = {
             ...trip,
+            routeCoordinates: routeOption?.coordinates ?? null,
             segments: segs.map(s => ({
                 ...s,
                 stravne: calcSegStravne(s.fromTime, s.toTime, s.country ?? 'SK', getRatesForDate(ratesHistory, s.date)),
@@ -537,12 +547,16 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         setLoadingGenTi(ti)
         try {
             // Zisti skutočné tranzitné krajiny + alternatívne trasy cez OSM
-            const options = await calcOsmRouteOptions(depLoc.trim(), dest.trim())
+            // (ak máme uložené presné súradnice cieľa z OSM návrhu, použi ich namiesto opätovného geokódovania)
+            const destPoint = trip.destinationLat != null && trip.destinationLon != null
+                ? { lat: trip.destinationLat, lon: trip.destinationLon }
+                : dest.trim()
+            const options = await calcOsmRouteOptions(depLoc.trim(), destPoint)
             if (options && options.length > 1) {
                 setRouteOptions({ ti, options })
                 return
             }
-            buildSegmentsFromRoute(ti, options?.[0]?.countries ?? null)
+            buildSegmentsFromRoute(ti, options?.[0] ?? null)
         } finally {
             setLoadingGenTi(null)
         }
@@ -550,7 +564,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     const chooseRoute = (option: OsmRouteOption) => {
         if (!routeOptions) return
-        buildSegmentsFromRoute(routeOptions.ti, option.countries)
+        buildSegmentsFromRoute(routeOptions.ti, option)
         setRouteOptions(null)
     }
 
@@ -832,16 +846,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     inputValue={trip.destination}
                                     onInputChange={(_e, val, reason) => {
                                         if (reason === 'reset') return
-                                        updateTrip(ti, 'destination', val)
+                                        updateTrip(ti, 'destination', val, { destinationLat: null, destinationLon: null })
                                         searchDestination(val)
                                     }}
                                     onChange={(_e, val) => {
                                         if (typeof val !== 'string') return
                                         const match = osmDestSuggestions.find(s => s.label === val)
                                         if (match) {
-                                            updateTrip(ti, 'destination', match.shortLabel, match.countryCode ? { country: match.countryCode } : undefined)
+                                            updateTrip(ti, 'destination', match.shortLabel, {
+                                                ...(match.countryCode ? { country: match.countryCode } : null),
+                                                destinationLat: match.lat,
+                                                destinationLon: match.lon,
+                                            })
                                         } else {
-                                            updateTrip(ti, 'destination', val)
+                                            updateTrip(ti, 'destination', val, { destinationLat: null, destinationLon: null })
                                         }
                                     }}
                                     filterOptions={(options, { inputValue }) => {

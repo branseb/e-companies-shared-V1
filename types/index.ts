@@ -15,6 +15,8 @@ export type TripSegment = {
 
 export type Trip = {
     destination: string
+    destinationLat?: number | null
+    destinationLon?: number | null
     country?: string | null
     purpose?: string | null
     departureLocation?: string | null
@@ -23,6 +25,7 @@ export type Trip = {
     returnLocation?: string | null
     returnDate?: string | null
     returnTime?: string | null
+    routeCoordinates?: [number, number][] | null
     segments: TripSegment[]
 }
 
