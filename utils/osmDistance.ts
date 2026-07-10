@@ -98,53 +98,73 @@ const splitByCountry = async (
     return [{ country: fromCountry, km: firstKm, durationMin: firstDurationMin }, ...rest]
 }
 
-export const calcOsmDistanceByCountry = async (
-    from: string,
-    to: string
-): Promise<Array<{ country: string; km: number; durationMin: number }> | null> => {
+export type OsmCountryLeg = { country: string; km: number; durationMin: number }
+export type OsmRouteOption = { km: number; durationMin: number; countries: OsmCountryLeg[] }
+
+// Spracuje jednu OSRM trasu (geometria + trvanie) na rozpad po krajinách.
+const breakdownRoute = async (route: {
+    geometry: { coordinates: [number, number][] }
+    distance: number
+    duration: number
+    legs?: Array<{ annotation?: { duration?: number[] } }>
+}): Promise<OsmRouteOption | null> => {
+    const coords = route.geometry.coordinates
+    const totalDistanceM = route.distance
+    const totalDurationS = route.duration
+    if (!coords.length) return null
+
+    const cumKm: number[] = [0]
+    for (let i = 1; i < coords.length; i++) {
+        const [lon0, lat0] = coords[i - 1]
+        const [lon1, lat1] = coords[i]
+        cumKm.push(cumKm[i - 1] + haversineKm(lat0, lon0, lat1, lon1))
+    }
+    const totalHavKm = cumKm[cumKm.length - 1]
+    const scale = totalHavKm > 0 ? (totalDistanceM / 1000) / totalHavKm : 1
+
+    const annDuration: number[] = route.legs?.[0]?.annotation?.duration ?? []
+    const cumSec: number[] = [0]
+    for (let i = 0; i < coords.length - 1; i++) {
+        cumSec.push(cumSec[i] + (annDuration[i] ?? 0))
+    }
+    const totalAnnSec = cumSec[cumSec.length - 1]
+    const durScale = totalAnnSec > 0 ? totalDurationS / totalAnnSec : 1
+
+    const [startCountry, endCountry] = await Promise.all([
+        reverseCountry(coords[0][1], coords[0][0]),
+        reverseCountry(coords[coords.length - 1][1], coords[coords.length - 1][0]),
+    ])
+
+    const countries = startCountry === endCountry
+        ? [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
+        : await splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
+
+    return { km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60), countries }
+}
+
+// Vráti všetky alternatívne trasy (OSRM alternatives=true), každú s km, trvaním a rozpadom po krajinách.
+export const calcOsmRouteOptions = async (from: string, to: string): Promise<OsmRouteOption[] | null> => {
     const [a, b] = await Promise.all([geocode(from), geocode(to)])
     if (!a || !b) return null
     try {
-        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration`
+        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration&alternatives=true`
         const r = await fetch(url, { headers: { 'User-Agent': APP_UA, 'Referer': 'https://github.com/your-org/e-companies' } })
         if (!r.ok) return null
         const data = await r.json()
         if (data.code !== 'Ok' || !data.routes?.length) return null
 
-        const coords: [number, number][] = data.routes[0].geometry.coordinates
-        const totalDistanceM: number = data.routes[0].distance
-        const totalDurationS: number = data.routes[0].duration
-
-        if (!coords.length) return null
-
-        const cumKm: number[] = [0]
-        for (let i = 1; i < coords.length; i++) {
-            const [lon0, lat0] = coords[i - 1]
-            const [lon1, lat1] = coords[i]
-            cumKm.push(cumKm[i - 1] + haversineKm(lat0, lon0, lat1, lon1))
-        }
-        const totalHavKm = cumKm[cumKm.length - 1]
-        const scale = totalHavKm > 0 ? (totalDistanceM / 1000) / totalHavKm : 1
-
-        const annDuration: number[] = data.routes[0].legs?.[0]?.annotation?.duration ?? []
-        const cumSec: number[] = [0]
-        for (let i = 0; i < coords.length - 1; i++) {
-            cumSec.push(cumSec[i] + (annDuration[i] ?? 0))
-        }
-        const totalAnnSec = cumSec[cumSec.length - 1]
-        const durScale = totalAnnSec > 0 ? totalDurationS / totalAnnSec : 1
-
-        const [startCountry, endCountry] = await Promise.all([
-            reverseCountry(coords[0][1], coords[0][0]),
-            reverseCountry(coords[coords.length - 1][1], coords[coords.length - 1][0]),
-        ])
-
-        if (startCountry === endCountry) {
-            return [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
-        }
-
-        return splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
+        const options = await Promise.all(data.routes.map((rt: Parameters<typeof breakdownRoute>[0]) => breakdownRoute(rt)))
+        const valid = options.filter((o): o is OsmRouteOption => o !== null)
+        return valid.length > 0 ? valid : null
     } catch {
         return null
     }
+}
+
+export const calcOsmDistanceByCountry = async (
+    from: string,
+    to: string
+): Promise<OsmCountryLeg[] | null> => {
+    const options = await calcOsmRouteOptions(from, to)
+    return options?.[0]?.countries ?? null
 }

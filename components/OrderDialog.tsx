@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useRef, useState } from 'react'
 import {
     AppBar, Alert, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
-    Chip, Collapse, Dialog, Divider, FormControlLabel, IconButton, MenuItem,
+    Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem,
     Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
 import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
@@ -14,7 +14,7 @@ import {
     emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
-import { calcOsmDistanceByCountry } from '../utils/osmDistance'
+import { calcOsmDistanceByCountry, calcOsmRouteOptions, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
 
@@ -190,6 +190,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const [saving, setSaving] = useState(false)
     const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
+    const [routeOptions, setRouteOptions] = useState<{ ti: number; options: OsmRouteOption[] } | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
     const tempIdRef = useRef<string>(isNew ? crypto.randomUUID() : String(orderId ?? crypto.randomUUID()))
@@ -397,7 +398,21 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         }
     }
 
-    const generateTripSegments = async (ti: number) => {
+    // Zreťaz časy jednotlivých úsekov z trvania jazdy (OSM), ak poznáme čas odchodu/návratu
+    const chainForward = (start: string, durations: number[]): string[] => {
+        const times = [start]
+        let clock = start
+        for (const d of durations) { clock = addMinutesToTime(clock, d); times.push(clock) }
+        return times
+    }
+    const chainBackward = (end: string, durations: number[]): string[] => {
+        const times = [end]
+        let clock = end
+        for (let i = durations.length - 1; i >= 0; i--) { clock = addMinutesToTime(clock, -durations[i]); times.unshift(clock) }
+        return times
+    }
+
+    const buildSegmentsFromRoute = (ti: number, route: OsmCountryLeg[] | null) => {
         const trip = (form.trips ?? [])[ti]
         if (!trip) return
         const trans     = form.transportType ?? 'car'
@@ -430,28 +445,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
         let segs: TripSegment[]
 
-        // Zreťaz časy jednotlivých úsekov z trvania jazdy (OSM), ak poznáme čas odchodu/návratu
-        const chainForward = (start: string, durations: number[]): string[] => {
-            const times = [start]
-            let clock = start
-            for (const d of durations) { clock = addMinutesToTime(clock, d); times.push(clock) }
-            return times
-        }
-        const chainBackward = (end: string, durations: number[]): string[] => {
-            const times = [end]
-            let clock = end
-            for (let i = durations.length - 1; i >= 0; i--) { clock = addMinutesToTime(clock, -durations[i]); times.unshift(clock) }
-            return times
-        }
-
         if (foreign) {
-            // Zisti skutočné tranzitné krajiny cez OSM
-            let route: Array<{ country: string; km: number; durationMin: number }> | null = null
-            if (depLoc.trim() && dest.trim()) {
-                setLoadingGenTi(ti)
-                try { route = await calcOsmDistanceByCountry(depLoc.trim(), dest.trim()) } catch { /* fallback */ }
-            }
-
             if (route && route.length > 1) {
                 // Multi-krajinová trasa — vygeneruj správne hraničné úseky
                 const codes = route.map(r => r.country)
@@ -512,7 +506,40 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             })),
         }
         set('trips', trips)
-        setLoadingGenTi(null)
+    }
+
+    const generateTripSegments = async (ti: number) => {
+        const trip = (form.trips ?? [])[ti]
+        if (!trip) return
+        const depLoc = trip.departureLocation ?? ''
+        const dest = trip.destination
+        const tripCountryCode = trip.country ?? 'SK'
+        const destCtry = allCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
+        const foreign = destCtry.code !== 'SK'
+
+        if (!foreign || !depLoc.trim() || !dest.trim()) {
+            buildSegmentsFromRoute(ti, null)
+            return
+        }
+
+        setLoadingGenTi(ti)
+        try {
+            // Zisti skutočné tranzitné krajiny + alternatívne trasy cez OSM
+            const options = await calcOsmRouteOptions(depLoc.trim(), dest.trim())
+            if (options && options.length > 1) {
+                setRouteOptions({ ti, options })
+                return
+            }
+            buildSegmentsFromRoute(ti, options?.[0]?.countries ?? null)
+        } finally {
+            setLoadingGenTi(null)
+        }
+    }
+
+    const chooseRoute = (option: OsmRouteOption) => {
+        if (!routeOptions) return
+        buildSegmentsFromRoute(routeOptions.ti, option.countries)
+        setRouteOptions(null)
     }
 
     const removeTrip = (ti: number) => {
@@ -1743,6 +1770,41 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         </Box>
                     )}
                 </Box>
+            </Dialog>
+        )}
+
+        {/* ── Výber trasy (alternatívy z OSM) ── */}
+        {routeOptions && (
+            <Dialog open onClose={() => setRouteOptions(null)} maxWidth="xs" fullWidth>
+                <DialogTitle>Vyberte trasu</DialogTitle>
+                <DialogContent>
+                    <Stack sx={{ gap: 1.25, mt: 0.5 }}>
+                        {routeOptions.options.map((opt, i) => {
+                            const h = Math.floor(opt.durationMin / 60)
+                            const m = opt.durationMin % 60
+                            const route = opt.countries
+                                .map(c => allCountries.find(ac => ac.code === c.country)?.label ?? c.country)
+                                .join(' → ')
+                            return (
+                                <Card key={i} variant="outlined"
+                                    sx={{ cursor: 'pointer', borderRadius: '14px', '&:hover': { borderColor: 'primary.main' } }}
+                                    onClick={() => chooseRoute(opt)}>
+                                    <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                            {opt.km} km · {h > 0 ? `${h} h ` : ''}{m} min
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                            {route}
+                                        </Typography>
+                                    </CardContent>
+                                </Card>
+                            )
+                        })}
+                    </Stack>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setRouteOptions(null)}>Zrušiť</Button>
+                </DialogActions>
             </Dialog>
         )}
     </>
