@@ -11,7 +11,7 @@ import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTION
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
-    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
+    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime, countryFlag,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmDistanceByCountry, calcOsmRouteOptions, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
@@ -1783,7 +1783,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             const h = Math.floor(opt.durationMin / 60)
                             const m = opt.durationMin % 60
                             const route = opt.countries
-                                .map(c => allCountries.find(ac => ac.code === c.country)?.label ?? c.country)
+                                .map(c => `${countryFlag(c.country)} ${allCountries.find(ac => ac.code === c.country)?.label ?? c.country}`.trim())
                                 .join(' → ')
                             return (
                                 <Card key={i} variant="outlined"
