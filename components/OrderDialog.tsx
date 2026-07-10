@@ -11,7 +11,7 @@ import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTION
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
-    emptyTrip, fmtDate, calcSegStravne,
+    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmDistanceByCountry } from '../utils/osmDistance'
@@ -430,9 +430,23 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
         let segs: TripSegment[]
 
+        // Zreťaz časy jednotlivých úsekov z trvania jazdy (OSM), ak poznáme čas odchodu/návratu
+        const chainForward = (start: string, durations: number[]): string[] => {
+            const times = [start]
+            let clock = start
+            for (const d of durations) { clock = addMinutesToTime(clock, d); times.push(clock) }
+            return times
+        }
+        const chainBackward = (end: string, durations: number[]): string[] => {
+            const times = [end]
+            let clock = end
+            for (let i = durations.length - 1; i >= 0; i--) { clock = addMinutesToTime(clock, -durations[i]); times.unshift(clock) }
+            return times
+        }
+
         if (foreign) {
             // Zisti skutočné tranzitné krajiny cez OSM
-            let route: Array<{ country: string; km: number }> | null = null
+            let route: Array<{ country: string; km: number; durationMin: number }> | null = null
             if (depLoc.trim() && dest.trim()) {
                 setLoadingGenTi(ti)
                 try { route = await calcOsmDistanceByCountry(depLoc.trim(), dest.trim()) } catch { /* fallback */ }
@@ -442,22 +456,28 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 // Multi-krajinová trasa — vygeneruj správne hraničné úseky
                 const codes = route.map(r => r.country)
                 const hr = (a: string, b: string) => `hr. ${a}-${b}`
+                const durations = route.map(r => r.durationMin)
+                const outTimes = depTime ? chainForward(depTime, durations) : null
+                const retTimes = retTime ? chainBackward(retTime, [...durations].reverse()) : null
 
-                const outSegs = route.map(({ country, km }, i) =>
-                    mkSeg(depDate,
+                const outSegs = route.map(({ country, km }, i) => {
+                    const isLast = i === codes.length - 1
+                    return mkSeg(depDate,
                         i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
-                        i === 0 ? depTime : '',
-                        i === codes.length - 1 ? dest : hr(codes[i], codes[i + 1]),
-                        i === codes.length - 1 ? arrToTime : '',
-                        country, km))
+                        i === 0 ? depTime : (outTimes ? outTimes[i] : ''),
+                        isLast ? dest : hr(codes[i], codes[i + 1]),
+                        isLast ? (arrToTime || (outTimes ? outTimes[i + 1] : '')) : (outTimes ? outTimes[i + 1] : ''),
+                        country, km)
+                })
 
                 const retSegs = [...route].reverse().map(({ country, km }, i) => {
                     const rev = [...codes].reverse()
+                    const isLast = i === rev.length - 1
                     return mkSeg(retDate,
                         i === 0 ? dest : hr(rev[i - 1], rev[i]),
-                        i === 0 ? retFromTime : '',
-                        i === rev.length - 1 ? retLoc : hr(rev[i], rev[i + 1]),
-                        i === rev.length - 1 ? retTime : '',
+                        i === 0 ? (retFromTime || (retTimes ? retTimes[i] : '')) : (retTimes ? retTimes[i] : ''),
+                        isLast ? retLoc : hr(rev[i], rev[i + 1]),
+                        isLast ? retTime : (retTimes ? retTimes[i + 1] : ''),
                         country, km)
                 })
 

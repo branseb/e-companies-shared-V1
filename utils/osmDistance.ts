@@ -63,19 +63,23 @@ const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 // Rekurzívne nájde všetky prechody hraníc pomocou binary search na súradniciach trasy.
-// coords: GeoJSON [lon, lat][], cumKm: kumulatívne vzdialenosti po Haversine, scale: korekčný faktor OSRM
+// coords: GeoJSON [lon, lat][], cumKm/cumSec: kumulatívna vzdialenosť/trvanie po úsekoch,
+// scale/durScale: korekčné faktory na skutočnú vzdialenosť/trvanie z OSRM
 const splitByCountry = async (
     coords: [number, number][],
     cumKm: number[],
     scale: number,
+    cumSec: number[],
+    durScale: number,
     lo: number,
     hi: number,
     fromCountry: string,
     toCountry: string
-): Promise<Array<{ country: string; km: number }>> => {
+): Promise<Array<{ country: string; km: number; durationMin: number }>> => {
     if (fromCountry === toCountry || hi - lo <= 1) {
         const km = Math.round((cumKm[hi] - cumKm[lo]) * scale)
-        return [{ country: fromCountry, km }]
+        const durationMin = Math.round((cumSec[hi] - cumSec[lo]) * durScale / 60)
+        return [{ country: fromCountry, km, durationMin }]
     }
 
     let left = lo, right = hi
@@ -88,19 +92,20 @@ const splitByCountry = async (
 
     const nextCountry = await reverseCountry(coords[right][1], coords[right][0])
     const firstKm = Math.round((cumKm[right] - cumKm[lo]) * scale)
+    const firstDurationMin = Math.round((cumSec[right] - cumSec[lo]) * durScale / 60)
 
-    const rest = await splitByCountry(coords, cumKm, scale, right, hi, nextCountry, toCountry)
-    return [{ country: fromCountry, km: firstKm }, ...rest]
+    const rest = await splitByCountry(coords, cumKm, scale, cumSec, durScale, right, hi, nextCountry, toCountry)
+    return [{ country: fromCountry, km: firstKm, durationMin: firstDurationMin }, ...rest]
 }
 
 export const calcOsmDistanceByCountry = async (
     from: string,
     to: string
-): Promise<Array<{ country: string; km: number }> | null> => {
+): Promise<Array<{ country: string; km: number; durationMin: number }> | null> => {
     const [a, b] = await Promise.all([geocode(from), geocode(to)])
     if (!a || !b) return null
     try {
-        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full`
+        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration`
         const r = await fetch(url, { headers: { 'User-Agent': APP_UA, 'Referer': 'https://github.com/your-org/e-companies' } })
         if (!r.ok) return null
         const data = await r.json()
@@ -108,6 +113,7 @@ export const calcOsmDistanceByCountry = async (
 
         const coords: [number, number][] = data.routes[0].geometry.coordinates
         const totalDistanceM: number = data.routes[0].distance
+        const totalDurationS: number = data.routes[0].duration
 
         if (!coords.length) return null
 
@@ -120,16 +126,24 @@ export const calcOsmDistanceByCountry = async (
         const totalHavKm = cumKm[cumKm.length - 1]
         const scale = totalHavKm > 0 ? (totalDistanceM / 1000) / totalHavKm : 1
 
+        const annDuration: number[] = data.routes[0].legs?.[0]?.annotation?.duration ?? []
+        const cumSec: number[] = [0]
+        for (let i = 0; i < coords.length - 1; i++) {
+            cumSec.push(cumSec[i] + (annDuration[i] ?? 0))
+        }
+        const totalAnnSec = cumSec[cumSec.length - 1]
+        const durScale = totalAnnSec > 0 ? totalDurationS / totalAnnSec : 1
+
         const [startCountry, endCountry] = await Promise.all([
             reverseCountry(coords[0][1], coords[0][0]),
             reverseCountry(coords[coords.length - 1][1], coords[coords.length - 1][0]),
         ])
 
         if (startCountry === endCountry) {
-            return [{ country: startCountry, km: Math.round(totalDistanceM / 1000) }]
+            return [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
         }
 
-        return splitByCountry(coords, cumKm, scale, 0, coords.length - 1, startCountry, endCountry)
+        return splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
     } catch {
         return null
     }
