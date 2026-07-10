@@ -14,7 +14,7 @@ import {
     emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
-import { calcOsmDistanceByCountry, calcOsmRouteOptions, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
+import { calcOsmDistanceByCountry, calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg } from '../utils/osmDistance'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
 import RouteMap from './RouteMap'
@@ -192,6 +192,8 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
     const [routeOptions, setRouteOptions] = useState<{ ti: number; options: OsmRouteOption[] } | null>(null)
+    const [osmDestOptions, setOsmDestOptions] = useState<string[]>([])
+    const destSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
     const tempIdRef = useRef<string>(isNew ? crypto.randomUUID() : String(orderId ?? crypto.randomUUID()))
@@ -377,6 +379,15 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             updated.returnDate = value as string
         trips[ti] = updated
         set('trips', trips)
+    }
+
+    const searchDestination = (query: string) => {
+        if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
+        if (query.trim().length < 3) { setOsmDestOptions([]); return }
+        destSearchTimer.current = setTimeout(async () => {
+            const results = await searchOsmPlaces(query)
+            setOsmDestOptions(results)
+        }, 400)
     }
 
     const fetchKmByCountry = async (ti: number) => {
@@ -813,14 +824,16 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                 <Autocomplete
                                     freeSolo
                                     fullWidth
-                                    options={[
+                                    options={[...new Set([
                                         ...prefs.customPlaces,
-                                        ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []).filter(c => !prefs.customPlaces.includes(c)),
-                                    ]}
+                                        ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []),
+                                        ...osmDestOptions,
+                                    ])]}
                                     inputValue={trip.destination}
                                     onInputChange={(_e, val, reason) => {
                                         if (reason === 'reset') return
                                         updateTrip(ti, 'destination', val)
+                                        searchDestination(val)
                                     }}
                                     onChange={(_e, val) => {
                                         if (typeof val === 'string') updateTrip(ti, 'destination', val)
@@ -829,7 +842,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                         const q = norm(inputValue)
                                         return options.filter(o =>
                                             o !== trip.departureLocation &&
-                                            (q === '' || norm(o).includes(q))
+                                            (osmDestOptions.includes(o) || q === '' || norm(o).includes(q))
                                         )
                                     }}
                                     renderInput={params => (

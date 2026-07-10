@@ -25,6 +25,22 @@ const geocode = async (query: string): Promise<{ lat: number; lon: number } | nu
     }
 }
 
+// Vyhľadá miesta zodpovedajúce zadanému textu (pre autocomplete pri písaní).
+export const searchOsmPlaces = async (query: string): Promise<string[]> => {
+    const q = query.trim()
+    if (q.length < 3) return []
+    try {
+        const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=0&accept-language=sk`
+        const r = await fetch(url, { headers: { 'User-Agent': APP_UA } })
+        if (!r.ok) return []
+        const data = await r.json()
+        if (!Array.isArray(data)) return []
+        return data.map((d: { display_name: string }) => d.display_name).filter(Boolean)
+    } catch {
+        return []
+    }
+}
+
 export const calcOsmDistance = async (from: string, to: string): Promise<number | null> => {
     const [a, b] = await Promise.all([geocode(from), geocode(to)])
     if (!a || !b) return null
