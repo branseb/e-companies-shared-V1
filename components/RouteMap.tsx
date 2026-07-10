@@ -36,7 +36,23 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
 
         map.fitBounds(line.getBounds(), { padding: [10, 10] })
 
-        return () => { map.remove() }
+        // Kontajner môže mať pri inicializácii nulovú veľkosť (napr. počas prechodu
+        // Dialógu alebo kým sa ustáli okolitý layout) - po ustálení mapu prerátaj.
+        const resizeObserver = new ResizeObserver(() => {
+            map.invalidateSize()
+            map.fitBounds(line.getBounds(), { padding: [10, 10] })
+        })
+        resizeObserver.observe(containerRef.current)
+        const t = setTimeout(() => {
+            map.invalidateSize()
+            map.fitBounds(line.getBounds(), { padding: [10, 10] })
+        }, 150)
+
+        return () => {
+            clearTimeout(t)
+            resizeObserver.disconnect()
+            map.remove()
+        }
     }, [coordinates])
 
     return <div ref={containerRef} style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden' }} />
