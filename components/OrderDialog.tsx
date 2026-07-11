@@ -491,7 +491,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                         from: i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
                         fromTime: i === 0 ? depTime : (outTimes ? outTimes[i] : ''),
                         to: isLast ? dest : hr(codes[i], codes[i + 1]),
-                        toTime: isLast ? (arrToTime || (outTimes ? outTimes[i + 1] : '')) : (outTimes ? outTimes[i + 1] : ''),
+                        // Uprednostni reálne dopočítaný čas príchodu pred sentinelom "00:00" -
+                        // ten je len záložná hodnota pre výpočet stravného, keď reálny čas nepoznáme.
+                        toTime: isLast ? ((outTimes ? outTimes[i + 1] : '') || arrToTime) : (outTimes ? outTimes[i + 1] : ''),
                         country, km,
                     })
                 })
@@ -502,7 +504,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     return mkSeg({
                         date: retDate,
                         from: i === 0 ? dest : hr(rev[i - 1], rev[i]),
-                        fromTime: i === 0 ? (retFromTime || (retTimes ? retTimes[i] : '')) : (retTimes ? retTimes[i] : ''),
+                        fromTime: i === 0 ? ((retTimes ? retTimes[i] : '') || retFromTime) : (retTimes ? retTimes[i] : ''),
                         to: isLast ? retLoc : hr(rev[i], rev[i + 1]),
                         toTime: isLast ? retTime : (retTimes ? retTimes[i + 1] : ''),
                         country, km,
@@ -521,9 +523,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
                 segs = [
                     mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: `hr. SK-${bp}`, toTime: outTimes ? outTimes[1] : '', country: 'SK', km: sk.km }),
-                    mkSeg({ date: depDate, from: `hr. SK-${bp}`, fromTime: outTimes ? outTimes[1] : '', to: dest, toTime: arrToTime || (outTimes ? outTimes[2] : ''), country: destCtry.code, km: dst.km }),
+                    mkSeg({ date: depDate, from: `hr. SK-${bp}`, fromTime: outTimes ? outTimes[1] : '', to: dest, toTime: (outTimes ? outTimes[2] : '') || arrToTime, country: destCtry.code, km: dst.km }),
                     ...midSegs(destCtry.code),
-                    mkSeg({ date: retDate, from: dest, fromTime: retFromTime || (retTimes ? retTimes[0] : ''), to: `hr. ${bp}-SK`, toTime: retTimes ? retTimes[1] : '', country: destCtry.code, km: dst.km }),
+                    mkSeg({ date: retDate, from: dest, fromTime: (retTimes ? retTimes[0] : '') || retFromTime, to: `hr. ${bp}-SK`, toTime: retTimes ? retTimes[1] : '', country: destCtry.code, km: dst.km }),
                     mkSeg({ date: retDate, from: `hr. ${bp}-SK`, fromTime: retTimes ? retTimes[1] : '', to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
                 ]
             }
@@ -532,9 +534,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             const outTimes = depTime && sk.durationMin != null ? chainForward(depTime, [sk.durationMin]) : null
             const retTimes = retTime && sk.durationMin != null ? chainBackward(retTime, [sk.durationMin]) : null
             segs = [
-                mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: dest, toTime: arrToTime || (outTimes ? outTimes[1] : ''), country: 'SK', km: sk.km }),
+                mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: dest, toTime: (outTimes ? outTimes[1] : '') || arrToTime, country: 'SK', km: sk.km }),
                 ...midSegs('SK'),
-                mkSeg({ date: retDate, from: dest, fromTime: retFromTime || (retTimes ? retTimes[0] : ''), to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
+                mkSeg({ date: retDate, from: dest, fromTime: (retTimes ? retTimes[0] : '') || retFromTime, to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
             ]
         }
 
