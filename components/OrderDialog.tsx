@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
     AppBar, Alert, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
     Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem,
@@ -11,7 +11,7 @@ import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTION
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
-    emptyTrip, fmtDate, calcSegStravne, addMinutesToTime,
+    emptyTrip, fmtDate, calcSegStravne, chainForward, chainBackward,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
@@ -197,7 +197,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const [loadingKmTi, setLoadingKmTi] = useState<number | null>(null)
     const [loadingGenTi, setLoadingGenTi] = useState<number | null>(null)
     const [routeOptions, setRouteOptions] = useState<{ ti: number; options: OsmRouteOption[] } | null>(null)
-    const [osmDestSuggestions, setOsmDestSuggestions] = useState<OsmPlaceSuggestion[]>([])
+    // Kľúčované podľa indexu cesty (`ti`) - príkaz môže mať viac ciest, každá so
+    // svojím vlastným poľom "Cieľ cesty" a vlastnými návrhmi.
+    const [osmDestSuggestions, setOsmDestSuggestions] = useState<Record<number, OsmPlaceSuggestion[]>>({})
     const destSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -238,6 +240,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     }, [effectiveCarKm, form.applyAmortization, form.departureDate, ratesHistory])
 
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
+    const countryLabelByCode = useMemo(() => new Map(allCountries.map(c => [c.code, c.label])), [allCountries])
 
     const foreignCurrencies = useMemo(() => {
         const countries = [...new Set(
@@ -386,14 +389,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         set('trips', trips)
     }
 
-    const searchDestination = (query: string) => {
+    const searchDestination = (ti: number, query: string) => {
         if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
-        if (query.trim().length < 3) { setOsmDestSuggestions([]); return }
+        if (query.trim().length < 3) { setOsmDestSuggestions(s => ({ ...s, [ti]: [] })); return }
         destSearchTimer.current = setTimeout(async () => {
             const results = await searchOsmPlaces(query)
-            setOsmDestSuggestions(results)
+            setOsmDestSuggestions(s => ({ ...s, [ti]: results }))
         }, 400)
     }
+
+    // Rozbehnutý debounce vyhľadávania cieľa nesmie po zatvorení dialógu doletieť
+    // s výsledkom (setState na odmontovanej komponente / zbytočná sieťová požiadavka).
+    useEffect(() => () => {
+        if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
+    }, [])
 
     const fetchKmByCountry = async (ti: number) => {
         const trip = (form.trips ?? [])[ti]
@@ -419,20 +428,6 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         }
     }
 
-    // Zreťaz časy jednotlivých úsekov z trvania jazdy (OSM), ak poznáme čas odchodu/návratu
-    const chainForward = (start: string, durations: number[]): string[] => {
-        const times = [start]
-        let clock = start
-        for (const d of durations) { clock = addMinutesToTime(clock, d); times.push(clock) }
-        return times
-    }
-    const chainBackward = (end: string, durations: number[]): string[] => {
-        const times = [end]
-        let clock = end
-        for (let i = durations.length - 1; i >= 0; i--) { clock = addMinutesToTime(clock, -durations[i]); times.unshift(clock) }
-        return times
-    }
-
     const buildSegmentsFromRoute = (ti: number, routeOption: OsmRouteOption | null) => {
         const trip = (form.trips ?? [])[ti]
         if (!trip) return
@@ -449,8 +444,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const destCtry  = allCountries.find(c => c.code === tripCountryCode) ?? { code: tripCountryCode, label: tripCountryCode, currency: 'EUR', borderPrefix: tripCountryCode }
         const foreign   = destCtry.code !== 'SK'
 
-        const mkSeg = (date: string, from: string, fromTime: string, to: string, toTime = '', segCountry = 'SK', km: number | null = null): TripSegment =>
-            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km, stravne: null, country: segCountry, nbsDate: null })
+        type SegOpts = { date: string; from: string; fromTime: string; to: string; toTime?: string; country?: string; km?: number | null }
+        const mkSeg = ({ date, from, fromTime, to, toTime = '', country = 'SK', km = null }: SegOpts): TripSegment =>
+            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km, stravne: null, country, nbsDate: null })
 
         const d0 = new Date(depDate), d1 = new Date(retDate)
         const dayDiff = Math.round((d1.getTime() - d0.getTime()) / 86_400_000)
@@ -463,7 +459,19 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const overnight   = dayDiff >= 1
         const arrToTime   = overnight ? '00:00' : ''
         const retFromTime = overnight ? '00:00' : ''
-        const midSegs     = (ctry: string) => midDays.map(date => mkSeg(date, dest, '00:00', dest, '00:00', ctry))
+        const midSegs = (ctry: string) => midDays.map(date =>
+            mkSeg({ date, from: dest, fromTime: '00:00', to: dest, toTime: '00:00', country: ctry }))
+
+        // Súčet km/trvania pre všetky úseky danej krajiny v trase - trasa môže tú
+        // istú krajinu obsahovať aj viackrát (napr. keď sa nakrátko vráti cez hranicu).
+        const sumCountry = (code: string): { km: number | null; durationMin: number | null } => {
+            const legs = (route ?? []).filter(r => r.country === code)
+            if (legs.length === 0) return { km: null, durationMin: null }
+            return {
+                km: legs.reduce((s, r) => s + r.km, 0),
+                durationMin: legs.reduce((s, r) => s + r.durationMin, 0),
+            }
+        }
 
         let segs: TripSegment[]
 
@@ -478,56 +486,55 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
                 const outSegs = route.map(({ country, km }, i) => {
                     const isLast = i === codes.length - 1
-                    return mkSeg(depDate,
-                        i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
-                        i === 0 ? depTime : (outTimes ? outTimes[i] : ''),
-                        isLast ? dest : hr(codes[i], codes[i + 1]),
-                        isLast ? (arrToTime || (outTimes ? outTimes[i + 1] : '')) : (outTimes ? outTimes[i + 1] : ''),
-                        country, km)
+                    return mkSeg({
+                        date: depDate,
+                        from: i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
+                        fromTime: i === 0 ? depTime : (outTimes ? outTimes[i] : ''),
+                        to: isLast ? dest : hr(codes[i], codes[i + 1]),
+                        toTime: isLast ? (arrToTime || (outTimes ? outTimes[i + 1] : '')) : (outTimes ? outTimes[i + 1] : ''),
+                        country, km,
+                    })
                 })
 
                 const retSegs = [...route].reverse().map(({ country, km }, i) => {
                     const rev = [...codes].reverse()
                     const isLast = i === rev.length - 1
-                    return mkSeg(retDate,
-                        i === 0 ? dest : hr(rev[i - 1], rev[i]),
-                        i === 0 ? (retFromTime || (retTimes ? retTimes[i] : '')) : (retTimes ? retTimes[i] : ''),
-                        isLast ? retLoc : hr(rev[i], rev[i + 1]),
-                        isLast ? retTime : (retTimes ? retTimes[i + 1] : ''),
-                        country, km)
+                    return mkSeg({
+                        date: retDate,
+                        from: i === 0 ? dest : hr(rev[i - 1], rev[i]),
+                        fromTime: i === 0 ? (retFromTime || (retTimes ? retTimes[i] : '')) : (retTimes ? retTimes[i] : ''),
+                        to: isLast ? retLoc : hr(rev[i], rev[i + 1]),
+                        toTime: isLast ? retTime : (retTimes ? retTimes[i + 1] : ''),
+                        country, km,
+                    })
                 })
 
                 segs = [...outSegs, ...midSegs(destCtry.code), ...retSegs]
             } else {
-                // Fallback: jedna zahraničná krajina alebo OSM zlyhalo
+                // Fallback: jedna zahraničná krajina alebo OSM zlyhalo - dva úseky (SK, cieľová krajina)
                 const bp = destCtry.borderPrefix
-                const kmSK  = route?.find(r => r.country === 'SK')?.km ?? null
-                const kmDst = route?.find(r => r.country === destCtry.code)?.km ?? null
-                const durSK  = route?.find(r => r.country === 'SK')?.durationMin
-                const durDst = route?.find(r => r.country === destCtry.code)?.durationMin
-
-                const midOut = depTime && durSK != null ? addMinutesToTime(depTime, durSK) : ''
-                const arrComputed = midOut && durDst != null ? addMinutesToTime(midOut, durDst) : ''
-                const midRet = retTime && durSK != null ? addMinutesToTime(retTime, -durSK) : ''
-                const depComputed = midRet && durDst != null ? addMinutesToTime(midRet, -durDst) : ''
+                const sk = sumCountry('SK')
+                const dst = sumCountry(destCtry.code)
+                const durations = sk.durationMin != null && dst.durationMin != null ? [sk.durationMin, dst.durationMin] : null
+                const outTimes = depTime && durations ? chainForward(depTime, durations) : null
+                const retTimes = retTime && durations ? chainBackward(retTime, [...durations].reverse()) : null
 
                 segs = [
-                    mkSeg(depDate, depLoc,         depTime,                        `hr. SK-${bp}`, midOut,                          'SK',          kmSK),
-                    mkSeg(depDate, `hr. SK-${bp}`, midOut,                          dest,          arrToTime || arrComputed,        destCtry.code, kmDst),
+                    mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: `hr. SK-${bp}`, toTime: outTimes ? outTimes[1] : '', country: 'SK', km: sk.km }),
+                    mkSeg({ date: depDate, from: `hr. SK-${bp}`, fromTime: outTimes ? outTimes[1] : '', to: dest, toTime: arrToTime || (outTimes ? outTimes[2] : ''), country: destCtry.code, km: dst.km }),
                     ...midSegs(destCtry.code),
-                    mkSeg(retDate, dest,           retFromTime || depComputed,      `hr. ${bp}-SK`, midRet,                         destCtry.code, kmDst),
-                    mkSeg(retDate, `hr. ${bp}-SK`, midRet,                          retLoc,        retTime,                         'SK',          kmSK),
+                    mkSeg({ date: retDate, from: dest, fromTime: retFromTime || (retTimes ? retTimes[0] : ''), to: `hr. ${bp}-SK`, toTime: retTimes ? retTimes[1] : '', country: destCtry.code, km: dst.km }),
+                    mkSeg({ date: retDate, from: `hr. ${bp}-SK`, fromTime: retTimes ? retTimes[1] : '', to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
                 ]
             }
         } else {
-            const domKm = route?.find(r => r.country === 'SK')?.km ?? null
-            const domDur = route?.find(r => r.country === 'SK')?.durationMin
-            const arrComputed = depTime && domDur != null ? addMinutesToTime(depTime, domDur) : ''
-            const depComputed = retTime && domDur != null ? addMinutesToTime(retTime, -domDur) : ''
+            const sk = sumCountry('SK')
+            const outTimes = depTime && sk.durationMin != null ? chainForward(depTime, [sk.durationMin]) : null
+            const retTimes = retTime && sk.durationMin != null ? chainBackward(retTime, [sk.durationMin]) : null
             segs = [
-                mkSeg(depDate, depLoc, depTime,                     dest,   arrToTime || arrComputed, 'SK', domKm),
+                mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: dest, toTime: arrToTime || (outTimes ? outTimes[1] : ''), country: 'SK', km: sk.km }),
                 ...midSegs('SK'),
-                mkSeg(retDate, dest,   retFromTime || depComputed,  retLoc, retTime,                   'SK', domKm),
+                mkSeg({ date: retDate, from: dest, fromTime: retFromTime || (retTimes ? retTimes[0] : ''), to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
             ]
         }
 
@@ -561,7 +568,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             const destPoint = trip.destinationLat != null && trip.destinationLon != null
                 ? { lat: trip.destinationLat, lon: trip.destinationLon }
                 : dest.trim()
-            const options = await calcOsmRouteOptions(depLoc.trim(), destPoint)
+            const options = await calcOsmRouteOptions(depLoc.trim(), destPoint, { alternatives: true })
             if (options && options.length > 1) {
                 setRouteOptions({ ti, options })
                 return
@@ -759,6 +766,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const renderStep1 = () => (
         <>
             {(form.trips ?? []).map((trip, ti) => {
+                const tripOsmSuggestions = osmDestSuggestions[ti] ?? []
                 const daily = calcDailyStravne(trip.segments, ratesHistory)
                 const foreignDaily = daily.filter(ds => ds.country !== 'SK')
                 const firstForeignCur = foreignDaily[0]?.currency ?? 'EUR'
@@ -851,17 +859,17 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     options={[...new Set([
                                         ...prefs.customPlaces,
                                         ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []),
-                                        ...osmDestSuggestions.map(s => s.label),
+                                        ...tripOsmSuggestions.map(s => s.label),
                                     ])]}
                                     inputValue={trip.destination}
                                     onInputChange={(_e, val, reason) => {
                                         if (reason === 'reset') return
                                         updateTrip(ti, 'destination', val, { destinationLat: null, destinationLon: null })
-                                        searchDestination(val)
+                                        searchDestination(ti, val)
                                     }}
                                     onChange={(_e, val) => {
                                         if (typeof val !== 'string') return
-                                        const match = osmDestSuggestions.find(s => s.label === val)
+                                        const match = tripOsmSuggestions.find(s => s.label === val)
                                         if (match) {
                                             updateTrip(ti, 'destination', match.shortLabel, {
                                                 ...(match.countryCode ? { country: match.countryCode } : null),
@@ -874,7 +882,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     }}
                                     filterOptions={(options, { inputValue }) => {
                                         const q = norm(inputValue)
-                                        const osmLabels = osmDestSuggestions.map(s => s.label)
+                                        const osmLabels = tripOsmSuggestions.map(s => s.label)
                                         return options.filter(o =>
                                             o !== trip.departureLocation &&
                                             (osmLabels.includes(o) || q === '' || norm(o).includes(q))
@@ -898,10 +906,13 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                         value={allCountries.find(c => c.code === (trip.country ?? 'SK')) ?? (trip.country ?? 'SK')}
                                         onChange={(_e, val) => {
                                             if (!val) return
-                                            updateTrip(ti, 'country', typeof val === 'string' ? val.toUpperCase().slice(0, 10) : val.code)
+                                            // Ručná zmena krajiny robí uložené súradnice cieľa (z OSM návrhu)
+                                            // nedôveryhodné - mohli patriť inej krajine ako tá novo zvolená.
+                                            updateTrip(ti, 'country', typeof val === 'string' ? val.toUpperCase().slice(0, 10) : val.code,
+                                                { destinationLat: null, destinationLon: null })
                                         }}
                                         onInputChange={(_e, _val, reason) => {
-                                            if (reason === 'clear') updateTrip(ti, 'country', 'SK')
+                                            if (reason === 'clear') updateTrip(ti, 'country', 'SK', { destinationLat: null, destinationLon: null })
                                         }}
                                         isOptionEqualToValue={(o, v) => typeof v === 'string' ? o.code === v : o.code === v.code}
                                         noOptionsText="Krajina nie je v zozname — zadajte kód ručne (napr. JP)"
@@ -1854,7 +1865,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                                         onError={e => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
                                                     />
                                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                                        {allCountries.find(ac => ac.code === c.country)?.label ?? c.country}
+                                                        {countryLabelByCode.get(c.country) ?? c.country}
                                                     </Typography>
                                                 </Fragment>
                                             ))}

@@ -157,7 +157,9 @@ export type OsmRouteOption = {
     km: number
     durationMin: number
     countries: OsmCountryLeg[]
-    coordinates: [number, number][] // GeoJSON [lon, lat][] - priebeh trasy pre mapu
+    // Pole objektov (nie [number, number][]) - Firestore odmieta priamo vnorené polia,
+    // takže tento tvar ide priamo uložiť na Trip.routeCoordinates bez ďalšej konverzie.
+    coordinates: Array<{ lat: number; lon: number }>
 }
 
 // Spracuje jednu OSRM trasu (geometria + trvanie) na rozpad po krajinách.
@@ -183,8 +185,17 @@ const breakdownRoute = async (route: {
 
     const annDuration: number[] = route.legs?.[0]?.annotation?.duration ?? []
     const cumSec: number[] = [0]
-    for (let i = 0; i < coords.length - 1; i++) {
-        cumSec.push(cumSec[i] + (annDuration[i] ?? 0))
+    if (annDuration.length > 0) {
+        for (let i = 0; i < coords.length - 1; i++) {
+            cumSec.push(cumSec[i] + (annDuration[i] ?? 0))
+        }
+    } else {
+        // OSRM niekedy nevráti anotácie trvania (napr. pre alternatívne trasy) -
+        // bez tejto vetvy by durationMin vyšlo 0 pre každý úsek. Odhadni trvanie
+        // proporcionálne podľa prejdenej vzdialenosti.
+        for (let i = 1; i < coords.length; i++) {
+            cumSec.push(totalHavKm > 0 ? (cumKm[i] / totalHavKm) * totalDurationS : 0)
+        }
     }
     const totalAnnSec = cumSec[cumSec.length - 1]
     const durScale = totalAnnSec > 0 ? totalDurationS / totalAnnSec : 1
@@ -198,19 +209,28 @@ const breakdownRoute = async (route: {
         ? [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
         : await splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
 
-    return { km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60), countries, coordinates: coords }
+    return {
+        km: Math.round(totalDistanceM / 1000),
+        durationMin: Math.round(totalDurationS / 60),
+        countries,
+        coordinates: coords.map(([lon, lat]) => ({ lat, lon })),
+    }
 }
 
-// Vráti všetky alternatívne trasy (OSRM alternatives=true), každú s km, trvaním a rozpadom po krajinách.
+// Vráti trasu/trasy medzi dvomi bodmi, každú s km, trvaním a rozpadom po krajinách.
 // `from`/`to` môžu byť text (geokóduje sa) alebo už známe súradnice (presnejšie, bez geokódovania).
+// `alternatives: false` (predvolené) - jedna najlepšia trasa, bez zbytočných extra
+// reverse-geocode volaní na alternatívy, ktoré by sa aj tak zahodili (napr. "Navrhnúť km").
+// `alternatives: true` - viac možností na výber (dialóg "Vyberte trasu").
 export const calcOsmRouteOptions = async (
     from: string | GeoPoint,
-    to: string | GeoPoint
+    to: string | GeoPoint,
+    { alternatives = false }: { alternatives?: boolean } = {}
 ): Promise<OsmRouteOption[] | null> => {
     const [a, b] = await Promise.all([resolvePoint(from), resolvePoint(to)])
     if (!a || !b) return null
     try {
-        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration&alternatives=true`
+        const url = `${OSRM}/${a.lon},${a.lat};${b.lon},${b.lat}?geometries=geojson&overview=full&annotations=duration&alternatives=${alternatives}`
         const r = await fetch(url, { headers: { 'User-Agent': APP_UA, 'Referer': 'https://github.com/your-org/e-companies' } })
         if (!r.ok) return null
         const data = await r.json()
@@ -222,12 +242,4 @@ export const calcOsmRouteOptions = async (
     } catch {
         return null
     }
-}
-
-export const calcOsmDistanceByCountry = async (
-    from: string | GeoPoint,
-    to: string | GeoPoint
-): Promise<OsmCountryLeg[] | null> => {
-    const options = await calcOsmRouteOptions(from, to)
-    return options?.[0]?.countries ?? null
 }

@@ -27,6 +27,24 @@ export const addMinutesToTime = (time: string, minutes: number): string => {
     return `${hh}:${mm}`
 }
 
+// Zreťaz časy jednotlivých úsekov trasy z ich trvania (napr. z OSM/OSRM), počnúc
+// známym časom odchodu. Vráti pole dĺžky durations.length + 1 - časy vo všetkých
+// medziľahlých bodoch trasy vrátane štartu a cieľa.
+export const chainForward = (start: string, durations: number[]): string[] => {
+    const times = [start]
+    let clock = start
+    for (const d of durations) { clock = addMinutesToTime(clock, d); times.push(clock) }
+    return times
+}
+
+// To isté, ale odzadu - od známeho času príchodu/návratu.
+export const chainBackward = (end: string, durations: number[]): string[] => {
+    const times = [end]
+    let clock = end
+    for (let i = durations.length - 1; i >= 0; i--) { clock = addMinutesToTime(clock, -durations[i]); times.unshift(clock) }
+    return times
+}
+
 export const emptySegment = (date: string, transport: string, country = 'SK'): TripSegment => ({
     date,
     fromPlace: '',

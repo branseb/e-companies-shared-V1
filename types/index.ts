@@ -25,7 +25,8 @@ export type Trip = {
     returnLocation?: string | null
     returnDate?: string | null
     returnTime?: string | null
-    routeCoordinates?: [number, number][] | null
+    // Pole objektov, nie [number, number][] - Firestore odmieta priamo vnorené polia.
+    routeCoordinates?: Array<{ lat: number; lon: number }> | null
     segments: TripSegment[]
 }
 

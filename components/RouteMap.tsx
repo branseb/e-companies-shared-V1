@@ -3,7 +3,7 @@ import { Typography, useTheme } from '@mui/material'
 import type * as Leaflet from 'leaflet'
 
 type Props = {
-    coordinates: [number, number][] // GeoJSON [lon, lat][]
+    coordinates: Array<{ lat: number; lon: number }>
     height?: number
 }
 
@@ -30,7 +30,7 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
             if (cancelled || !containerRef.current) return
             const L = mod.default ?? (mod as unknown as typeof Leaflet)
 
-            const latlngs: Leaflet.LatLngExpression[] = coordinates.map(([lon, lat]) => [lat, lon])
+            const latlngs: Leaflet.LatLngExpression[] = coordinates.map(({ lat, lon }) => [lat, lon])
 
             map = L.map(containerRef.current, {
                 zoomControl: false,
@@ -56,19 +56,28 @@ const RouteMap = ({ coordinates, height = 140 }: Props) => {
             L.circleMarker(latlngs[0], { radius: 5, color: '#fff', weight: 2, fillColor: '#22C55E', fillOpacity: 1 }).addTo(map)
             L.circleMarker(latlngs[latlngs.length - 1], { radius: 5, color: '#fff', weight: 2, fillColor: '#EF4444', fillOpacity: 1 }).addTo(map)
 
-            map.fitBounds(line.getBounds(), { padding: [10, 10] })
-
             // Kontajner môže mať pri inicializácii nulovú veľkosť (napr. počas prechodu
-            // Dialógu alebo kým sa ustáli okolitý layout) - po ustálení mapu prerátaj.
-            resizeObserver = new ResizeObserver(() => {
-                map?.invalidateSize()
-                map?.fitBounds(line.getBounds(), { padding: [10, 10] })
-            })
+            // Dialógu alebo kým sa ustáli okolitý layout). `fitBounds` sa preto zavolá
+            // len RAZ, hneď ako kontajner reálne dostane nenulovú veľkosť - opakované
+            // volanie pri každom ďalšom resize by zakaždým zrušilo používateľovo
+            // ručné posunutie/priblíženie mapy.
+            let fitted = false
+            const stabilize = () => {
+                if (!map) return
+                map.invalidateSize()
+                if (!fitted) {
+                    const size = map.getSize()
+                    if (size.x > 0 && size.y > 0) {
+                        map.fitBounds(line.getBounds(), { padding: [10, 10] })
+                        fitted = true
+                    }
+                }
+            }
+            stabilize()
+
+            resizeObserver = new ResizeObserver(stabilize)
             resizeObserver.observe(containerRef.current)
-            timer = setTimeout(() => {
-                map?.invalidateSize()
-                map?.fitBounds(line.getBounds(), { padding: [10, 10] })
-            }, 150)
+            timer = setTimeout(stabilize, 150)
         })
 
         return () => {
