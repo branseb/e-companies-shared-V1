@@ -503,20 +503,31 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 const bp = destCtry.borderPrefix
                 const kmSK  = route?.find(r => r.country === 'SK')?.km ?? null
                 const kmDst = route?.find(r => r.country === destCtry.code)?.km ?? null
+                const durSK  = route?.find(r => r.country === 'SK')?.durationMin
+                const durDst = route?.find(r => r.country === destCtry.code)?.durationMin
+
+                const midOut = depTime && durSK != null ? addMinutesToTime(depTime, durSK) : ''
+                const arrComputed = midOut && durDst != null ? addMinutesToTime(midOut, durDst) : ''
+                const midRet = retTime && durSK != null ? addMinutesToTime(retTime, -durSK) : ''
+                const depComputed = midRet && durDst != null ? addMinutesToTime(midRet, -durDst) : ''
+
                 segs = [
-                    mkSeg(depDate, depLoc,         depTime,      `hr. SK-${bp}`, '',        'SK',          kmSK),
-                    mkSeg(depDate, `hr. SK-${bp}`, '',            dest,          arrToTime, destCtry.code, kmDst),
+                    mkSeg(depDate, depLoc,         depTime,                        `hr. SK-${bp}`, midOut,                          'SK',          kmSK),
+                    mkSeg(depDate, `hr. SK-${bp}`, midOut,                          dest,          arrToTime || arrComputed,        destCtry.code, kmDst),
                     ...midSegs(destCtry.code),
-                    mkSeg(retDate, dest,           retFromTime,  `hr. ${bp}-SK`, '',        destCtry.code, kmDst),
-                    mkSeg(retDate, `hr. ${bp}-SK`, '',            retLoc,        retTime,   'SK',          kmSK),
+                    mkSeg(retDate, dest,           retFromTime || depComputed,      `hr. ${bp}-SK`, midRet,                         destCtry.code, kmDst),
+                    mkSeg(retDate, `hr. ${bp}-SK`, midRet,                          retLoc,        retTime,                         'SK',          kmSK),
                 ]
             }
         } else {
             const domKm = route?.find(r => r.country === 'SK')?.km ?? null
+            const domDur = route?.find(r => r.country === 'SK')?.durationMin
+            const arrComputed = depTime && domDur != null ? addMinutesToTime(depTime, domDur) : ''
+            const depComputed = retTime && domDur != null ? addMinutesToTime(retTime, -domDur) : ''
             segs = [
-                mkSeg(depDate, depLoc, depTime,     dest,   arrToTime, 'SK', domKm),
+                mkSeg(depDate, depLoc, depTime,                     dest,   arrToTime || arrComputed, 'SK', domKm),
                 ...midSegs('SK'),
-                mkSeg(retDate, dest,   retFromTime, retLoc, retTime,   'SK', domKm),
+                mkSeg(retDate, dest,   retFromTime || depComputed,  retLoc, retTime,                   'SK', domKm),
             ]
         }
 
