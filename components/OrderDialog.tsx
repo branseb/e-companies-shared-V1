@@ -397,16 +397,17 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
     const countryLabelByCode = useMemo(() => new Map(allCountries.map(c => [c.code, c.label])), [allCountries])
 
-    // Všetky cudzie meny, ktoré sa v CP reálne vyskytujú - nielen podľa krajiny
-    // úseku (stravné), ale aj podľa meny priamo zadanej pri výdavku (tá sa môže
-    // líšiť, napr. výdavok v USD na úseku v Poľsku).
+    // Všetky cudzie meny, ktoré sa v CP reálne vyskytujú - odvodené z tej istej
+    // funkcie, ktorá reálne počíta stravné (calcDailyStravne), nie znovu cez
+    // allCountries.find() - ten je odvodený len z krajín, ktoré má aktuálna
+    // zákonná tabuľka sadzieb explicitne pomenované, takže krajina, čo tam chýba,
+    // by potichu spadla na EUR a z výberu úplne zmizla. Pridáva aj meny priamo
+    // zadané pri výdavku (tá sa môže líšiť, napr. výdavok v USD na úseku v Poľsku).
     const foreignCurrencies = useMemo(() => {
-        const segments = (form.trips ?? []).flatMap(t => t.segments)
-        const countryCurs = [...new Set(segments.map(s => s.country ?? 'SK').filter(c => c !== 'SK'))]
-            .map(c => allCountries.find(o => o.code === c)?.currency ?? 'EUR')
-        const expenseCurs = segments.flatMap(s => s.expenses ?? []).map(e => e.currency || 'EUR')
-        return [...new Set([...countryCurs, ...expenseCurs])].filter(c => c !== 'EUR')
-    }, [form.trips, allCountries])
+        const dailyCurs = (form.trips ?? []).flatMap(t => calcDailyStravne(t.segments, ratesHistory).map(ds => ds.currency))
+        const expenseCurs = (form.trips ?? []).flatMap(t => t.segments).flatMap(s => s.expenses ?? []).map(e => e.currency || 'EUR')
+        return [...new Set([...dailyCurs, ...expenseCurs])].filter(c => c !== 'EUR')
+    }, [form.trips, ratesHistory])
 
     const earliestDeparture = useMemo(() => {
         const departures = (form.trips ?? []).map(t => t.departureDate).filter(Boolean) as string[]
