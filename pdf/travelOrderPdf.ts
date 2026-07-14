@@ -671,17 +671,22 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                     const rate = e.cur !== 'EUR' ? d.exchangeRates?.[e.cur] : undefined
                     return sum + (rate && rate > 0 ? e.total / rate : e.total)
                 }, 0)
+                const hasValidRate = (cur: string) => !!(d.exchangeRates?.[cur] && (d.exchangeRates[cur] ?? 0) > 0)
                 const stravneEur = ds
-                    ? (ds.currency === 'EUR' ? ds.stravne : d.exchangeRates?.[ds.currency] && (d.exchangeRates[ds.currency] ?? 0) > 0
-                        ? ds.stravne / d.exchangeRates[ds.currency]! : ds.stravne)
+                    ? (ds.currency === 'EUR' ? ds.stravne : hasValidRate(ds.currency)
+                        ? ds.stravne / d.exchangeRates![ds.currency]! : ds.stravne)
                     : 0
                 const spoloCelkom = stravneEur + segExpTotalEur
                 // Ak stravné je v cudzej mene a nie je kurz (teda nekonvertovalo sa na EUR), ukážeme menu
-                const spoloCelkomCur = ds && ds.currency !== 'EUR'
-                    && !(d.exchangeRates?.[ds.currency] && (d.exchangeRates[ds.currency] ?? 0) > 0)
-                    ? ds.currency : undefined
+                const spoloCelkomCur = ds && ds.currency !== 'EUR' && !hasValidRate(ds.currency) ? ds.currency : undefined
+                // Riadok je "prepočítaný podľa kurzu", ak sa stravné alebo niektorý výdavok
+                // reálne konvertoval z cudzej meny na EUR - označí sa hviezdičkou a vysvetlivka
+                // sa vypíše pod tabuľkou úsekov (setuje hasStars).
+                const rowConverted = (!!ds && ds.currency !== 'EUR' && hasValidRate(ds.currency))
+                    || Object.values(segExpMap).some(e => e.cur !== 'EUR' && hasValidRate(e.cur))
+                if (rowConverted) hasStars = true
                 const spoluStr = spoloCelkom > 0
-                    ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '')
+                    ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '') + (rowConverted ? ' *' : '')
                     : stravneStr
 
                 dataPairs.push({
@@ -768,7 +773,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
 
     if (hasStars) {
         const dateStr = d.exchangeRateDate ? ` zo dňa ${fmtD(d.exchangeRateDate)}` : ''
-        normal(doc, 5); doc.text(`* stravné prepočítané podľa kurzu NBS${dateStr}`, L + 2, y + 2.5)
+        normal(doc, 5); doc.text(`* prepočítané podľa kurzu${dateStr}`, L + 2, y + 2.5)
         y += 4
         hLine(doc, y)
     }
