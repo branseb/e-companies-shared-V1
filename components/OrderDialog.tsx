@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
     AppBar, Alert, Autocomplete, Box, Button, Card, CardContent, Checkbox, CircularProgress,
     Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem,
-    Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
+    Paper, Stack, Step, StepLabel, Stepper, Switch, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
 import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InfoOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
 import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, TripWaypoint, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
@@ -325,6 +325,8 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // Skupiny nocľažného, ktoré si používateľ ručne "rozbalil" na zadanie ceny
     // osobitne pre každú noc namiesto jednej spoločnej sumy - kľúč `${ti}|${dateFrom}`.
     const [expandedNights, setExpandedNights] = useState<Set<string>>(new Set())
+    // Meny, pri ktorých je rozbalený detailný výber kategórií na prepočet (šípka).
+    const [expandedRateCur, setExpandedRateCur] = useState<Set<string>>(new Set())
     const [rateFetch, setRateFetch] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null })
     const [fuelPriceFetch, setFuelPriceFetch] = useState<{ loading: boolean; error: string | null; weekLabel?: string }>({ loading: false, error: null })
     const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null)
@@ -395,16 +397,15 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const allCountries = useMemo(() => getAllCountries(ratesHistory), [ratesHistory])
     const countryLabelByCode = useMemo(() => new Map(allCountries.map(c => [c.code, c.label])), [allCountries])
 
+    // Všetky cudzie meny, ktoré sa v CP reálne vyskytujú - nielen podľa krajiny
+    // úseku (stravné), ale aj podľa meny priamo zadanej pri výdavku (tá sa môže
+    // líšiť, napr. výdavok v USD na úseku v Poľsku).
     const foreignCurrencies = useMemo(() => {
-        const countries = [...new Set(
-            (form.trips ?? []).flatMap(t => t.segments)
-                .map(s => s.country ?? 'SK')
-                .filter(c => c !== 'SK')
-        )]
-        const curs = countries
+        const segments = (form.trips ?? []).flatMap(t => t.segments)
+        const countryCurs = [...new Set(segments.map(s => s.country ?? 'SK').filter(c => c !== 'SK'))]
             .map(c => allCountries.find(o => o.code === c)?.currency ?? 'EUR')
-            .filter(c => c !== 'EUR')
-        return [...new Set(curs)]
+        const expenseCurs = segments.flatMap(s => s.expenses ?? []).map(e => e.currency || 'EUR')
+        return [...new Set([...countryCurs, ...expenseCurs])].filter(c => c !== 'EUR')
     }, [form.trips, allCountries])
 
     const earliestDeparture = useMemo(() => {
@@ -2230,33 +2231,56 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             )}
                             {foreignCurrencies.map(currency => {
                                 // Bez záznamu pre menu = prepočítať všetko (spätná kompatibilita).
-                                const selected = form.exchangeRateCategories?.[currency] ?? EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                const allCats = EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                const selected = form.exchangeRateCategories?.[currency] ?? allCats
+                                const allSelected = selected.length === allCats.length
                                 const toggleCategory = (cat: string) => {
-                                    const current = form.exchangeRateCategories?.[currency] ?? EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                    const current = form.exchangeRateCategories?.[currency] ?? allCats
                                     const next = current.includes(cat) ? current.filter(c => c !== cat) : [...current, cat]
                                     set('exchangeRateCategories', { ...form.exchangeRateCategories, [currency]: next })
                                 }
+                                const detailOpen = expandedRateCur.has(currency)
+                                const toggleDetail = () => setExpandedRateCur(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(currency)) next.delete(currency); else next.add(currency)
+                                    return next
+                                })
                                 return (
-                                    <Stack key={currency} sx={{ gap: 0.75 }}>
-                                        <TextField label={`1 EUR = ? ${currency}`}
-                                            type="number" sx={{ maxWidth: 155 }}
-                                            slotProps={{ inputLabel: { shrink: true } }}
-                                            value={form.exchangeRates?.[currency] ?? ''}
-                                            onChange={e => set('exchangeRates', {
-                                                ...form.exchangeRates,
-                                                [currency]: e.target.value ? Number(e.target.value) : undefined,
-                                            } as Record<string, number>)} />
-                                        <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                                Prepočítať na EUR:
-                                            </Typography>
-                                            {EXCHANGE_RATE_CATEGORIES.map(cat => (
-                                                <Chip key={cat.value} size="small" label={cat.label}
-                                                    color={selected.includes(cat.value) ? 'primary' : 'default'}
-                                                    variant={selected.includes(cat.value) ? 'filled' : 'outlined'}
-                                                    onClick={() => toggleCategory(cat.value)} />
-                                            ))}
+                                    <Stack key={currency} sx={{ gap: 0.25 }}>
+                                        <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <TextField label={`1 EUR = ? ${currency}`}
+                                                type="number" sx={{ maxWidth: 155 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={form.exchangeRates?.[currency] ?? ''}
+                                                onChange={e => set('exchangeRates', {
+                                                    ...form.exchangeRates,
+                                                    [currency]: e.target.value ? Number(e.target.value) : undefined,
+                                                } as Record<string, number>)} />
+                                            <FormControlLabel sx={{ mr: 0 }}
+                                                control={<Switch size="small" checked={allSelected}
+                                                    onChange={e => set('exchangeRateCategories', {
+                                                        ...form.exchangeRateCategories,
+                                                        [currency]: e.target.checked ? allCats : [],
+                                                    })} />}
+                                                label={<Typography variant="body2">Prepočítať všetko</Typography>} />
+                                            <IconButton size="small" onClick={toggleDetail}
+                                                aria-label="Podrobný výber kategórií">
+                                                {detailOpen ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                                            </IconButton>
                                         </Stack>
+                                        <Collapse in={detailOpen}>
+                                            <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
+                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                    Prepočítať na EUR:
+                                                </Typography>
+                                                {EXCHANGE_RATE_CATEGORIES.map(cat => (
+                                                    <Chip key={cat.value} size="small" label={cat.label}
+                                                        color={selected.includes(cat.value) ? 'primary' : 'default'}
+                                                        variant={selected.includes(cat.value) ? 'filled' : 'outlined'}
+                                                        onClick={() => toggleCategory(cat.value)} />
+                                                ))}
+                                            </Stack>
+                                        </Collapse>
                                     </Stack>
                                 )
                             })}
