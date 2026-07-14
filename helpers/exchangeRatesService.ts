@@ -22,19 +22,24 @@ const shiftDate = (isoDate: string, days: number) => {
     return d.toISOString().slice(0, 10)
 }
 
+// NBS nepublikuje kurz cez víkendy/sviatky, takže sa skúša dozadu až
+// `maxLookbackDays` dní - VŠETKY NARAZ (Promise.all), nie postupne. Sekvenčné
+// čakanie na až 8 volaní na ten istý server v serverless prostredí (napr.
+// Vercel funkcia s časovým limitom) ľahko presiahne timeout.
 export const fetchExchangeRates = async (refDate: string, maxLookbackDays = 7): Promise<ExchangeRateLookup | null> => {
-    for (let i = 0; i <= maxLookbackDays; i++) {
-        const dateStr = shiftDate(refDate, -i)
+    const dates = Array.from({ length: maxLookbackDays + 1 }, (_, i) => shiftDate(refDate, -i))
+    const results = await Promise.all(dates.map(async (dateStr): Promise<ExchangeRateLookup | null> => {
         try {
             const res = await fetch(NBS_EXPORT_URL(dateStr))
-            if (res.ok) {
-                const parsed = parseReferenceRatesXml(await res.text())
-                if (parsed) return parsed
-            }
+            if (!res.ok) return null
+            return parseReferenceRatesXml(await res.text())
         } catch {
-            // try next fallback date / source
+            return null
         }
-    }
+    }))
+    const found = results.find((r): r is ExchangeRateLookup => r !== null)
+    if (found) return found
+
     try {
         const res = await fetch(ECB_DAILY_URL)
         if (res.ok) return parseReferenceRatesXml(await res.text())
