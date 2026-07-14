@@ -642,9 +642,6 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 const key = `${seg.date}|${seg.country ?? 'SK'}`
                 const isLast = lastIdx.get(key) === si
                 const ds = isLast ? stravneMap.get(key) : undefined
-                const stravneStr = ds
-                    ? (ds.currency === 'EUR' ? fmtSk(ds.stravne) : `${fmtSk(ds.stravne)} ${ds.currency}`)
-                    : undefined
 
                 // Pobytový deň: rovnaké miesto, prázdne alebo 00:00 časy → skryť časy
                 const isStay = seg.fromPlace !== '' && seg.fromPlace === seg.toPlace
@@ -652,9 +649,23 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 // Skryť '00:00' ak druhý čas nie je zadaný (napr. '' a '00:00' → oba prázdne)
                 const dispTime = (t: string, other: string) => !t || (t === '00:00' && !other) ? '' : t
 
+                const hasValidRate = (cur: string) => !!(d.exchangeRates?.[cur] && (d.exchangeRates[cur] ?? 0) > 0)
+                // Prepočíta sumu na EUR (ak je k dispozícii kurz) a rovno k nej pripojí "*" -
+                // hviezdička ide priamo k sume v jej VLASTNOM stĺpci (Stravné/Cestovné/...),
+                // nie až pri súčte "Spolu", nech je jasné KTORÁ konkrétna suma bola prepočítaná.
+                const amountEur = (amount: number, cur: string): { eur: number; text: string } => {
+                    if (cur === 'EUR') return { eur: amount, text: fmtSk(amount) }
+                    if (hasValidRate(cur)) {
+                        hasStars = true
+                        return { eur: amount / d.exchangeRates![cur]!, text: `${fmtSk(amount / d.exchangeRates![cur]!)} *` }
+                    }
+                    return { eur: amount, text: `${fmtSk(amount)} ${cur}` }
+                }
+
+                const stravneConv = ds ? amountEur(ds.stravne, ds.currency) : null
+                const stravneStr = stravneConv?.text
+
                 // Výdavky segmentu — sumujeme podľa typu a formátujeme pre PDF riadok
-                const fmtExp = (total: number, cur: string) =>
-                    cur === 'EUR' ? fmtSk(total) : `${fmtSk(total)} ${cur}`
                 const segExpMap: Record<string, { total: number; cur: string }> = {}
                 for (const exp of seg.expenses ?? []) {
                     const etype = exp.type || 'ine'
@@ -667,26 +678,12 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 const segNutne    = segExpMap['nutne']
                 const segIne      = (segExpMap['ine']?.total ?? 0) + (segExpMap['vreckove']?.total ?? 0)
                 const segIneCur   = segExpMap['ine']?.cur ?? segExpMap['vreckove']?.cur ?? 'EUR'
-                const segExpTotalEur = Object.values(segExpMap).reduce((sum, e) => {
-                    const rate = e.cur !== 'EUR' ? d.exchangeRates?.[e.cur] : undefined
-                    return sum + (rate && rate > 0 ? e.total / rate : e.total)
-                }, 0)
-                const hasValidRate = (cur: string) => !!(d.exchangeRates?.[cur] && (d.exchangeRates[cur] ?? 0) > 0)
-                const stravneEur = ds
-                    ? (ds.currency === 'EUR' ? ds.stravne : hasValidRate(ds.currency)
-                        ? ds.stravne / d.exchangeRates![ds.currency]! : ds.stravne)
-                    : 0
-                const spoloCelkom = stravneEur + segExpTotalEur
+                const segExpTotalEur = Object.values(segExpMap).reduce((sum, e) => sum + amountEur(e.total, e.cur).eur, 0)
+                const spoloCelkom = (stravneConv?.eur ?? 0) + segExpTotalEur
                 // Ak stravné je v cudzej mene a nie je kurz (teda nekonvertovalo sa na EUR), ukážeme menu
                 const spoloCelkomCur = ds && ds.currency !== 'EUR' && !hasValidRate(ds.currency) ? ds.currency : undefined
-                // Riadok je "prepočítaný podľa kurzu", ak sa stravné alebo niektorý výdavok
-                // reálne konvertoval z cudzej meny na EUR - označí sa hviezdičkou a vysvetlivka
-                // sa vypíše pod tabuľkou úsekov (setuje hasStars).
-                const rowConverted = (!!ds && ds.currency !== 'EUR' && hasValidRate(ds.currency))
-                    || Object.values(segExpMap).some(e => e.cur !== 'EUR' && hasValidRate(e.cur))
-                if (rowConverted) hasStars = true
                 const spoluStr = spoloCelkom > 0
-                    ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '') + (rowConverted ? ' *' : '')
+                    ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '')
                     : stravneStr
 
                 dataPairs.push({
@@ -696,10 +693,10 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                         trans: transportShort(seg.transport),
                         km: seg.km != null ? String(seg.km) : '',
                         stravne:      stravneStr,
-                        expCestovne:  segCestovne ? fmtExp(segCestovne.total, segCestovne.cur) : undefined,
-                        expNoclazne:  segNoclazne ? fmtExp(segNoclazne.total, segNoclazne.cur) : undefined,
-                        expNutne:     segNutne    ? fmtExp(segNutne.total,    segNutne.cur)    : undefined,
-                        expIne:       segIne > 0  ? fmtExp(segIne,            segIneCur)       : undefined,
+                        expCestovne:  segCestovne ? amountEur(segCestovne.total, segCestovne.cur).text : undefined,
+                        expNoclazne:  segNoclazne ? amountEur(segNoclazne.total, segNoclazne.cur).text : undefined,
+                        expNutne:     segNutne    ? amountEur(segNutne.total, segNutne.cur).text    : undefined,
+                        expIne:       segIne > 0  ? amountEur(segIne,         segIneCur).text       : undefined,
                         spolu:        spoluStr,
                     },
                     pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : dispTime(seg.toTime, seg.fromTime), trans: '', km: '' },
