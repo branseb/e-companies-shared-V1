@@ -125,6 +125,11 @@ export type TravelOrder = {
     useExchangeRates?: boolean | null
     exchangeRateDate?: string | null
     exchangeRates?: Record<string, number> | null
+    // Pre ktoré kategórie súm (stravné/cestovné/nocľažné/...) sa má kurz danej meny
+    // reálne použiť - napr. CZK prepočítať len pri stravnom, nocľažné v CZK nechať
+    // v pôvodnej mene. Mena bez záznamu tu = prepočítať všetko (spätná kompatibilita
+    // s CP vytvorenými pred touto voľbou).
+    exchangeRateCategories?: Record<string, string[]> | null
     trips?: Trip[] | null
     ratesSnapshot?: EffectiveRates | null
     kmRateUsed?: number | null

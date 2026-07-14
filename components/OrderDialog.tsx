@@ -7,7 +7,7 @@ import {
 import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InfoOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
 import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, TripWaypoint, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
-import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS } from '../constants'
+import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS, EXCHANGE_RATE_CATEGORIES } from '../constants'
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
@@ -2208,7 +2208,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 <Card sx={sxCard}>
                     <CardContent>
                         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
-                            Kurz NBS
+                            Výmenné kurzy
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, mb: 1.5 }}>
                             Vyplň pre meny, ktoré chceš prepočítať na EUR
@@ -2228,18 +2228,38 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             {rateFetch.error && (
                                 <Typography variant="caption" color="error">{rateFetch.error}</Typography>
                             )}
-                            <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
-                                {foreignCurrencies.map(currency => (
-                                    <TextField key={currency} label={`1 EUR = ? ${currency}`}
-                                        type="number" sx={{ maxWidth: 155 }}
-                                        slotProps={{ inputLabel: { shrink: true } }}
-                                        value={form.exchangeRates?.[currency] ?? ''}
-                                        onChange={e => set('exchangeRates', {
-                                            ...form.exchangeRates,
-                                            [currency]: e.target.value ? Number(e.target.value) : undefined,
-                                        } as Record<string, number>)} />
-                                ))}
-                            </Stack>
+                            {foreignCurrencies.map(currency => {
+                                // Bez záznamu pre menu = prepočítať všetko (spätná kompatibilita).
+                                const selected = form.exchangeRateCategories?.[currency] ?? EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                const toggleCategory = (cat: string) => {
+                                    const current = form.exchangeRateCategories?.[currency] ?? EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                    const next = current.includes(cat) ? current.filter(c => c !== cat) : [...current, cat]
+                                    set('exchangeRateCategories', { ...form.exchangeRateCategories, [currency]: next })
+                                }
+                                return (
+                                    <Stack key={currency} sx={{ gap: 0.75 }}>
+                                        <TextField label={`1 EUR = ? ${currency}`}
+                                            type="number" sx={{ maxWidth: 155 }}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={form.exchangeRates?.[currency] ?? ''}
+                                            onChange={e => set('exchangeRates', {
+                                                ...form.exchangeRates,
+                                                [currency]: e.target.value ? Number(e.target.value) : undefined,
+                                            } as Record<string, number>)} />
+                                        <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                Prepočítať na EUR:
+                                            </Typography>
+                                            {EXCHANGE_RATE_CATEGORIES.map(cat => (
+                                                <Chip key={cat.value} size="small" label={cat.label}
+                                                    color={selected.includes(cat.value) ? 'primary' : 'default'}
+                                                    variant={selected.includes(cat.value) ? 'filled' : 'outlined'}
+                                                    onClick={() => toggleCategory(cat.value)} />
+                                            ))}
+                                        </Stack>
+                                    </Stack>
+                                )
+                            })}
                         </Stack>
                     </CardContent>
                 </Card>

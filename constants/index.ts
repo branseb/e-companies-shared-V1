@@ -60,6 +60,17 @@ export const EXPENSE_TYPES = [
     { value: 'ine',      label: 'Iné náhrady' },
 ]
 
+// Kategórie súm, pri ktorých vieš pre danú cudziu menu zapnúť/vypnúť prepočet
+// na EUR (napr. CZK prepočítať len pri stravnom, nocľažné nechať v CZK).
+// Zodpovedá stĺpcom v PDF - "vreckové" sa tam zlučuje do "ine".
+export const EXCHANGE_RATE_CATEGORIES = [
+    { value: 'stravne',  label: 'Stravné' },
+    { value: 'cestovne', label: 'Cestovné' },
+    { value: 'noclazne', label: 'Nocľažné' },
+    { value: 'nutne',    label: 'Nutné náhrady' },
+    { value: 'ine',      label: 'Iné náhrady' },
+]
+
 export const PURPOSE_SUGGESTIONS = [
     'Obchodné rokovanie',
     'Obchodné stretnutie',

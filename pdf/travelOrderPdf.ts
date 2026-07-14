@@ -63,6 +63,7 @@ export interface TravelOrderPdfInput {
     useExchangeRates?: boolean | null
     exchangeRateDate?: string | null
     exchangeRates?: Record<string, number> | null
+    exchangeRateCategories?: Record<string, string[]> | null
     trips?: TripPdf[] | null
     ratesHistory?: StravneRates | null
     includeAccounting?: boolean
@@ -650,19 +651,25 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 const dispTime = (t: string, other: string) => !t || (t === '00:00' && !other) ? '' : t
 
                 const hasValidRate = (cur: string) => !!(d.exchangeRates?.[cur] && (d.exchangeRates[cur] ?? 0) > 0)
-                // Prepočíta sumu na EUR (ak je k dispozícii kurz) a rovno k nej pripojí "*" -
-                // hviezdička ide priamo k sume v jej VLASTNOM stĺpci (Stravné/Cestovné/...),
-                // nie až pri súčte "Spolu", nech je jasné KTORÁ konkrétna suma bola prepočítaná.
-                const amountEur = (amount: number, cur: string): { eur: number; text: string } => {
+                // Mena bez záznamu v exchangeRateCategories = prepočítať všetko (spätná
+                // kompatibilita); ak záznam existuje, prepočíta sa len vybraná kategória
+                // (napr. CZK len pri stravnom, nocľažné v CZK ostane v pôvodnej mene).
+                const shouldConvert = (cur: string, category: string) =>
+                    d.exchangeRateCategories?.[cur]?.includes(category) ?? true
+                // Prepočíta sumu na EUR (ak je k dispozícii kurz a kategória je na to
+                // zapnutá) a rovno k nej pripojí "*" - hviezdička ide priamo k sume v jej
+                // VLASTNOM stĺpci (Stravné/Cestovné/...), nie až pri súčte "Spolu", nech je
+                // jasné KTORÁ konkrétna suma bola prepočítaná.
+                const amountEur = (amount: number, cur: string, category: string): { eur: number; text: string } => {
                     if (cur === 'EUR') return { eur: amount, text: fmtSk(amount) }
-                    if (hasValidRate(cur)) {
+                    if (hasValidRate(cur) && shouldConvert(cur, category)) {
                         hasStars = true
                         return { eur: amount / d.exchangeRates![cur]!, text: `${fmtSk(amount / d.exchangeRates![cur]!)} *` }
                     }
                     return { eur: amount, text: `${fmtSk(amount)} ${cur}` }
                 }
 
-                const stravneConv = ds ? amountEur(ds.stravne, ds.currency) : null
+                const stravneConv = ds ? amountEur(ds.stravne, ds.currency, 'stravne') : null
                 const stravneStr = stravneConv?.text
 
                 // Výdavky segmentu — sumujeme podľa typu a formátujeme pre PDF riadok
@@ -678,10 +685,16 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 const segNutne    = segExpMap['nutne']
                 const segIne      = (segExpMap['ine']?.total ?? 0) + (segExpMap['vreckove']?.total ?? 0)
                 const segIneCur   = segExpMap['ine']?.cur ?? segExpMap['vreckove']?.cur ?? 'EUR'
-                const segExpTotalEur = Object.values(segExpMap).reduce((sum, e) => sum + amountEur(e.total, e.cur).eur, 0)
+                // 'vreckove' sa v PDF zobrazuje zlúčené do stĺpca "Iné", takže zdieľa
+                // aj jeho kategóriu prepočtu.
+                const expCategory = (etype: string) => etype === 'vreckove' ? 'ine' : etype
+                const segExpTotalEur = Object.entries(segExpMap)
+                    .reduce((sum, [etype, e]) => sum + amountEur(e.total, e.cur, expCategory(etype)).eur, 0)
                 const spoloCelkom = (stravneConv?.eur ?? 0) + segExpTotalEur
-                // Ak stravné je v cudzej mene a nie je kurz (teda nekonvertovalo sa na EUR), ukážeme menu
-                const spoloCelkomCur = ds && ds.currency !== 'EUR' && !hasValidRate(ds.currency) ? ds.currency : undefined
+                // Ak sa stravné v cudzej mene nekonvertovalo (chýba kurz alebo je kategória
+                // "stravné" pre túto menu vypnutá), ukážeme menu namiesto EUR
+                const spoloCelkomCur = ds && ds.currency !== 'EUR' && !(hasValidRate(ds.currency) && shouldConvert(ds.currency, 'stravne'))
+                    ? ds.currency : undefined
                 const spoluStr = spoloCelkom > 0
                     ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '')
                     : stravneStr
@@ -693,10 +706,10 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                         trans: transportShort(seg.transport),
                         km: seg.km != null ? String(seg.km) : '',
                         stravne:      stravneStr,
-                        expCestovne:  segCestovne ? amountEur(segCestovne.total, segCestovne.cur).text : undefined,
-                        expNoclazne:  segNoclazne ? amountEur(segNoclazne.total, segNoclazne.cur).text : undefined,
-                        expNutne:     segNutne    ? amountEur(segNutne.total, segNutne.cur).text    : undefined,
-                        expIne:       segIne > 0  ? amountEur(segIne,         segIneCur).text       : undefined,
+                        expCestovne:  segCestovne ? amountEur(segCestovne.total, segCestovne.cur, 'cestovne').text : undefined,
+                        expNoclazne:  segNoclazne ? amountEur(segNoclazne.total, segNoclazne.cur, 'noclazne').text : undefined,
+                        expNutne:     segNutne    ? amountEur(segNutne.total, segNutne.cur, 'nutne').text    : undefined,
+                        expIne:       segIne > 0  ? amountEur(segIne,         segIneCur, 'ine').text          : undefined,
                         spolu:        spoluStr,
                     },
                     pr: { date: '', dir: 'Príchod', place: seg.toPlace, time: isStay ? '' : dispTime(seg.toTime, seg.fromTime), trans: '', km: '' },
