@@ -4,13 +4,20 @@
 // - OSRM demo server (smerovanie): https://project-osrm.org
 //   ⚠ Demo server nie je určený pre produkčné nasadenie — môže byť odstavený
 //   bez upozornenia. Pre produkciu zvážte self-host OSRM.
-// - BigDataCloud (reverse geocoding krajín): https://www.bigdatacloud.com
+// - @rapideditor/country-coder (krajina podľa súradnice): offline, žiadne API
+//   volanie — predtým BigDataCloud reverse-geocode-client, ktorého fair-use
+//   politika (len live GPS z prehliadača so súhlasom) sa pri automatizovanom
+//   binárnom vyhľadávaní hranice porušovala a spôsobovala tiché zlyhania.
+
+import { iso1A2Code } from '@rapideditor/country-coder'
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search'
 const OSRM = 'https://router.project-osrm.org/route/v1/driving'
-const BDC = 'https://api.bigdatacloud.net/data/reverse-geocode-client'
 
 const APP_UA = 'e-companies/1.0 (internal; https://github.com/your-org/e-companies)'
+
+// Krajina podľa súradnice - lokálne, synchrónne, bez sieťového volania.
+const countryAt = (lat: number, lon: number): string => iso1A2Code([lon, lat]) ?? 'XX'
 
 export type GeoPoint = { lat: number; lon: number }
 
@@ -94,18 +101,6 @@ export const calcOsmDistance = async (from: string, to: string): Promise<number 
     }
 }
 
-const reverseCountry = async (lat: number, lon: number): Promise<string> => {
-    try {
-        const url = `${BDC}?latitude=${lat}&longitude=${lon}&localityLanguage=en`
-        const r = await fetch(url, { headers: { 'User-Agent': APP_UA } })
-        if (!r.ok) return 'XX'
-        const d = await r.json()
-        return (d.countryCode ?? 'XX').toUpperCase()
-    } catch {
-        return 'XX'
-    }
-}
-
 const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371
     const dLat = (lat2 - lat1) * Math.PI / 180
@@ -119,7 +114,7 @@ const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): nu
 // Rekurzívne nájde všetky prechody hraníc pomocou binary search na súradniciach trasy.
 // coords: GeoJSON [lon, lat][], cumKm/cumSec: kumulatívna vzdialenosť/trvanie po úsekoch,
 // scale/durScale: korekčné faktory na skutočnú vzdialenosť/trvanie z OSRM
-const splitByCountry = async (
+const splitByCountry = (
     coords: [number, number][],
     cumKm: number[],
     scale: number,
@@ -129,7 +124,7 @@ const splitByCountry = async (
     hi: number,
     fromCountry: string,
     toCountry: string
-): Promise<Array<{ country: string; km: number; durationMin: number }>> => {
+): Array<{ country: string; km: number; durationMin: number }> => {
     if (fromCountry === toCountry || hi - lo <= 1) {
         const km = Math.round((cumKm[hi] - cumKm[lo]) * scale)
         const durationMin = Math.round((cumSec[hi] - cumSec[lo]) * durScale / 60)
@@ -139,16 +134,16 @@ const splitByCountry = async (
     let left = lo, right = hi
     while (right - left > 1) {
         const mid = Math.floor((left + right) / 2)
-        const c = await reverseCountry(coords[mid][1], coords[mid][0])
+        const c = countryAt(coords[mid][1], coords[mid][0])
         if (c === fromCountry) left = mid
         else right = mid
     }
 
-    const nextCountry = await reverseCountry(coords[right][1], coords[right][0])
+    const nextCountry = countryAt(coords[right][1], coords[right][0])
     const firstKm = Math.round((cumKm[right] - cumKm[lo]) * scale)
     const firstDurationMin = Math.round((cumSec[right] - cumSec[lo]) * durScale / 60)
 
-    const rest = await splitByCountry(coords, cumKm, scale, cumSec, durScale, right, hi, nextCountry, toCountry)
+    const rest = splitByCountry(coords, cumKm, scale, cumSec, durScale, right, hi, nextCountry, toCountry)
     return [{ country: fromCountry, km: firstKm, durationMin: firstDurationMin }, ...rest]
 }
 
@@ -163,12 +158,12 @@ export type OsmRouteOption = {
 }
 
 // Spracuje jednu OSRM trasu (geometria + trvanie) na rozpad po krajinách.
-const breakdownRoute = async (route: {
+const breakdownRoute = (route: {
     geometry: { coordinates: [number, number][] }
     distance: number
     duration: number
     legs?: Array<{ annotation?: { duration?: number[] } }>
-}): Promise<OsmRouteOption | null> => {
+}): OsmRouteOption | null => {
     const coords = route.geometry.coordinates
     const totalDistanceM = route.distance
     const totalDurationS = route.duration
@@ -200,14 +195,12 @@ const breakdownRoute = async (route: {
     const totalAnnSec = cumSec[cumSec.length - 1]
     const durScale = totalAnnSec > 0 ? totalDurationS / totalAnnSec : 1
 
-    const [startCountry, endCountry] = await Promise.all([
-        reverseCountry(coords[0][1], coords[0][0]),
-        reverseCountry(coords[coords.length - 1][1], coords[coords.length - 1][0]),
-    ])
+    const startCountry = countryAt(coords[0][1], coords[0][0])
+    const endCountry = countryAt(coords[coords.length - 1][1], coords[coords.length - 1][0])
 
     const countries = startCountry === endCountry
         ? [{ country: startCountry, km: Math.round(totalDistanceM / 1000), durationMin: Math.round(totalDurationS / 60) }]
-        : await splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
+        : splitByCountry(coords, cumKm, scale, cumSec, durScale, 0, coords.length - 1, startCountry, endCountry)
 
     return {
         km: Math.round(totalDistanceM / 1000),
@@ -236,8 +229,8 @@ export const calcOsmRouteOptions = async (
         const data = await r.json()
         if (data.code !== 'Ok' || !data.routes?.length) return null
 
-        const options = await Promise.all(data.routes.map((rt: Parameters<typeof breakdownRoute>[0]) => breakdownRoute(rt)))
-        const valid = options.filter((o): o is OsmRouteOption => o !== null)
+        const options = data.routes.map((rt: Parameters<typeof breakdownRoute>[0]) => breakdownRoute(rt))
+        const valid = options.filter((o: OsmRouteOption | null): o is OsmRouteOption => o !== null)
         return valid.length > 0 ? valid : null
     } catch {
         return null

@@ -1,8 +1,8 @@
 import type { StravneRates, StravneRatesEntry } from '../types'
 
 export const FUEL_TYPE_OPTIONS = [
-    { value: 'petrol',   label: 'Benzín',    consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
     { value: 'diesel',   label: 'Nafta',     consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
+    { value: 'petrol',   label: 'Benzín',    consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
     { value: 'lpg',      label: 'LPG',       consumptionUnit: 'l/100km',    priceUnit: '€/l',    expenseLabel: 'PHM' },
     { value: 'cng',      label: 'CNG',       consumptionUnit: 'kg/100km',   priceUnit: '€/kg',   expenseLabel: 'PHM' },
     { value: 'electric', label: 'Elektrina', consumptionUnit: 'kWh/100km',  priceUnit: '€/kWh',  expenseLabel: 'El. energia' },
@@ -10,7 +10,7 @@ export const FUEL_TYPE_OPTIONS = [
 ] as const
 
 export const getFuelTypeInfo = (fuelType?: string | null, isElectric?: boolean | null) => {
-    const type = fuelType ?? (isElectric ? 'electric' : 'petrol')
+    const type = fuelType ?? (isElectric ? 'electric' : 'diesel')
     return FUEL_TYPE_OPTIONS.find(o => o.value === type) ?? FUEL_TYPE_OPTIONS[0]
 }
 

@@ -12,6 +12,43 @@ export const segHours = (fromTime: string, toTime: string): number => {
     return diff / 60
 }
 
+export type SegmentOverlap = { date: string; a: TripSegment; b: TripSegment }
+
+// Dva úseky sa prekrývajú, ak zdieľajú dátum a ich časové rozsahy [fromTime, toTime) sa pretínajú.
+// Nadväzujúce úseky (koniec jedného = začiatok druhého) prekryv nie sú - to je normálna reťaz cesty.
+export const findSegmentOverlaps = (segments: TripSegment[]): SegmentOverlap[] => {
+    const toMinutes = (t: string) => {
+        const [h, m] = t.split(':').map(Number)
+        return h * 60 + m
+    }
+    const range = (s: TripSegment) => {
+        const start = toMinutes(s.fromTime)
+        let end = toMinutes(s.toTime)
+        if (end <= start) end += 1440 // úsek cez polnoc
+        return [start, end] as const
+    }
+
+    const byDate = new Map<string, TripSegment[]>()
+    for (const s of segments) {
+        if (!s.date || !s.fromTime || !s.toTime) continue
+        if (!byDate.has(s.date)) byDate.set(s.date, [])
+        byDate.get(s.date)!.push(s)
+    }
+
+    const overlaps: SegmentOverlap[] = []
+    for (const segs of byDate.values()) {
+        for (let i = 0; i < segs.length; i++) {
+            const [aStart, aEnd] = range(segs[i])
+            for (let j = i + 1; j < segs.length; j++) {
+                const [bStart, bEnd] = range(segs[j])
+                if (aStart < bEnd && bStart < aEnd)
+                    overlaps.push({ date: segs[i].date, a: segs[i], b: segs[j] })
+            }
+        }
+    }
+    return overlaps
+}
+
 export const calcSegStravne = (fromTime: string, toTime: string, country: string, entry: StravneRatesEntry): number | null => {
     const h = segHours(fromTime, toTime)
     if (country === 'SK') {
@@ -84,10 +121,18 @@ export const calcDailyStravne = (segments: TripSegment[], ratesHistory: StravneR
         if (hasOvernightTo) {
             const lastSeg = daySegs[daySegs.length - 1]
             const lastTo  = lastSeg?.toTime ?? ''
+            const nextDaySegs = segments.filter(s => s.date === dates[di + 1])
+            const destCtry = nextDaySegs[0]?.country ?? lastSeg?.country ?? 'SK'
             if (lastTo && lastTo !== '00:00') {
-                const nextDaySegs = segments.filter(s => s.date === dates[di + 1])
-                const destCtry = nextDaySegs[0]?.country ?? lastSeg?.country ?? 'SK'
                 addHours(byCountry, destCtry, segHours(lastTo, '00:00'), entry)
+            } else if (lastTo === '00:00' && destCtry !== 'SK') {
+                // Arrived overnight into foreign country. No explicit arrival time on the
+                // final border segment. Attribute only from ITS departure (not the whole
+                // day) to midnight - earlier segments were already counted for their own
+                // countries in the blocks loop above; using the day's first departure here
+                // would double-count those hours under destCtry.
+                const lastFrom = lastSeg?.fromTime
+                if (lastFrom && lastFrom !== '00:00') addHours(byCountry, destCtry, segHours(lastFrom, '00:00'), entry)
             }
         }
 

@@ -13,20 +13,40 @@ export type TripSegment = {
     expenses?: Array<{ type: string; amount: number; currency: string }> | null
 }
 
+export type TripWaypoint = {
+    place: string
+    lat?: number | null
+    lon?: number | null
+    arrivalDate: string
+    arrivalTime: string
+}
+
 export type Trip = {
     destination: string
     destinationLat?: number | null
     destinationLon?: number | null
     country?: string | null
     purpose?: string | null
+    // Predvolený spôsob dopravy pre túto cestu - použije sa pri generovaní úsekov
+    // (aj ako predvolená hodnota pre ručne pridané úseky). Každý úsek si vie
+    // spôsob dopravy prepnúť aj samostatne (kombinovaná doprava).
+    defaultTransport?: string | null
     departureLocation?: string | null
     departureDate: string
     departureTime?: string | null
+    // Ďalšie ciele cesty ZA destination (voliteľné), každý s ručne zadaným
+    // dátumom/časom príchodu - namiesto odhadu z dĺžky jazdy. destination
+    // (prvý cieľ) ostáva vždy bez ručného času, presne ako doteraz.
+    waypoints?: TripWaypoint[] | null
     returnLocation?: string | null
     returnDate?: string | null
     returnTime?: string | null
     // Pole objektov, nie [number, number][] - Firestore odmieta priamo vnorené polia.
     routeCoordinates?: Array<{ lat: number; lon: number }> | null
+    // Číslované body cieľov cesty (destination + waypoints, v poradí) na
+    // vykreslenie na mape v náhľade - odchod/návrat majú vlastné (zelený/
+    // červený) markery, toto sú len samotné "miesta rokovania".
+    routeStops?: Array<{ lat: number; lon: number; label: string }> | null
     segments: TripSegment[]
 }
 
@@ -84,6 +104,7 @@ export type TravelOrder = {
     distanceKm?: number | null
     fuelConsumption?: number | null
     fuelPricePerLiter?: number | null
+    fuelPriceWeek?: string | null
     advanceAmount?: number | null
     stravneAmount?: number | null
     stravneMultiplier?: number | null
@@ -119,6 +140,7 @@ export type EmployeeRecord = {
     address?: string | null
     defaultLocation?: string | null
     defaultFuelConsumption?: number | null
+    defaultFuelType?: string | null
     defaultIsElectric?: boolean | null
     defaultEcv?: string | null
     rateKm?: number | null
@@ -183,6 +205,7 @@ export type EmployeeFormData = {
     address?: string
     defaultLocation?: string
     defaultFuelConsumption?: number
+    defaultFuelType?: string
     defaultIsElectric?: boolean
     defaultEcv?: string
     isMobileWorker?: boolean
@@ -198,7 +221,7 @@ export type TravelOrdersWidgetProps = {
     loading: boolean
     onAdd: (data: TravelOrderInput) => Promise<TravelOrder['id'] | undefined>
     onUpdate: (id: TravelOrder['id'], data: Partial<TravelOrderInput>) => Promise<void>
-    onDelete: (id: TravelOrder['id']) => Promise<void>
+    onDelete: (id: TravelOrder['id'], firebaseId?: string) => Promise<void>
     onGeneratePdf?: (order: TravelOrder) => void
     readOnly?: boolean
     ratesHistory?: StravneRates | null
@@ -217,6 +240,8 @@ export type TravelOrdersWidgetProps = {
     onDeleteAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => Promise<void>
     onMigrateAttachments?: (tempId: string, realOrderId: TravelOrder['id']) => Promise<void>
     onReadAttachment?: (orderId: TravelOrder['id'], attachmentId: string) => Promise<{ buffer: ArrayBuffer; mimeType: string } | null>
+    onFetchExchangeRates?: (isoDate: string) => Promise<{ date: string; rates: Record<string, number> } | null>
+    onFetchFuelPrice?: (fuelType: string, isoDate: string) => Promise<{ price: number; weekCode: string; weekLabel: string } | null>
 }
 
 export type TravelOrderAttachment = {

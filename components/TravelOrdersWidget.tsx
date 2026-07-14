@@ -26,7 +26,7 @@ export const TravelOrdersWidget = ({
     employees = [], onEmployeeCreate, onEmployeeUpdate, onEmployeeDelete,
     preferences: prefsProp, onPreferencesChange,
     onGetAttachments, onAddAttachment, onAddAttachmentFromPath, onOpenAttachment, onDeleteAttachment, onMigrateAttachments,
-    onReadAttachment,
+    onReadAttachment, onFetchExchangeRates, onFetchFuelPrice,
 }: TravelOrdersWidgetProps) => {
     const [dialog, setDialog] = useState<{ isNew: boolean; form: TravelOrderInput; id?: TravelOrder['id'] } | null>(null)
     const [expandedRows, setExpandedRows] = useState<Set<TravelOrder['id']>>(new Set())
@@ -93,7 +93,9 @@ export const TravelOrdersWidget = ({
         const depStr = r.departureDate ? fmtDate(r.departureDate) : '—'
         const retDate = r.trips?.length ? r.trips[r.trips.length - 1].returnDate : r.returnDate
         const retStr = retDate ? fmtDate(retDate) : '—'
-        const destination = r.trips?.length ? r.trips.map(t => t.destination).join(' / ') : r.destination
+        const destination = r.trips?.length
+            ? r.trips.map(t => [t.destination, ...(t.waypoints ?? []).map(w => w.place)].filter(Boolean).join(', ')).join(' / ')
+            : r.destination
         const totalParts = Object.entries(totalsMap).filter(([, amt]) => amt > 0).map(([c, amt]) => `${amt.toFixed(2)} ${c}`)
         const advanceStr = r.advances?.length
             ? r.advances.map(a => fmtAmt(a.amount, a.currency)).join(' + ')
@@ -117,7 +119,9 @@ export const TravelOrdersWidget = ({
             return (
                 r.employee?.toLowerCase().includes(q) ||
                 r.destination?.toLowerCase().includes(q) ||
-                r.trips?.some(t => t.destination?.toLowerCase().includes(q))
+                r.trips?.some(t =>
+                    t.destination?.toLowerCase().includes(q) ||
+                    t.waypoints?.some(w => w.place?.toLowerCase().includes(q)))
             )
         })
 
@@ -172,7 +176,7 @@ export const TravelOrdersWidget = ({
                         </IconButton>
                     </Tooltip>
                     <Tooltip title="Vymazať">
-                        <IconButton size="small" color="error" onClick={() => onDelete(r.id)}>
+                        <IconButton size="small" color="error" onClick={() => onDelete(r.id, (r as any).firebaseId)}>
                             <Delete fontSize="small" />
                         </IconButton>
                     </Tooltip>
@@ -415,6 +419,8 @@ export const TravelOrdersWidget = ({
                     onDeleteAttachment={onDeleteAttachment ? (tempId, id) => onDeleteAttachment(tempId, id) : undefined}
                     onOpenAttachment={onOpenAttachment ? (tempId, id) => onOpenAttachment(tempId, id) : undefined}
                     onReadAttachment={onReadAttachment ? (tempId, id) => onReadAttachment(tempId, id) : undefined}
+                    onFetchExchangeRates={onFetchExchangeRates}
+                    onFetchFuelPrice={onFetchFuelPrice}
                 />
             )}
             {empOpen && onEmployeeCreate && onEmployeeUpdate && onEmployeeDelete && (

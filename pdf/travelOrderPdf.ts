@@ -3,7 +3,7 @@ import { robotoBase64 } from '../assets/robotoFont'
 import { roboto700Base64 } from '../assets/robotoBoldFont'
 import { calcDailyStravne, getRatesForDate } from '../helpers'
 import { DEFAULT_STRAVNE_RATES, getFuelTypeInfo } from '../constants'
-import type { StravneRates, TripSegment } from '../types'
+import type { StravneRates, TripSegment, TripWaypoint } from '../types'
 
 const DEFAULT_AMORTIZATION_RATE = 0.313
 
@@ -19,6 +19,7 @@ const TRANSPORT_OPTIONS = [
 
 export type TripPdf = {
     destination: string
+    waypoints?: TripWaypoint[] | null
     purpose?: string | null
     departureLocation?: string | null
     departureDate: string
@@ -132,12 +133,30 @@ const label   = (doc: jsPDF, text: string, x: number, y: number) => { normal(doc
 const value   = (doc: jsPDF, text: string, x: number, y: number) => { normal(doc, 8);   doc.text(text, x, y) }
 const boldVal = (doc: jsPDF, text: string, x: number, y: number) => { bold(doc, 8);     doc.text(text, x, y) }
 
+// Zalomenie textu na `maxWidth` a jeho vykreslenie tučne na viac riadkov -
+// používa sa pre "Miesto rokovania", kde reťaz cieľ + zastávky môže byť dlhá.
+// Riadky sa musia počítať RAZ, tým istým fontom, akým sa aj kreslia - inak by
+// mohol vyjsť iný počet riadkov než na aký sa natiahla výška bunky (text by
+// pretiekol cez deliacu čiaru).
+const DEST_LINE_H = 3.6
+const splitBoldLines = (doc: jsPDF, text: string, maxWidth: number): string[] => {
+    bold(doc, 8)
+    return doc.splitTextToSize(text, maxWidth) as string[]
+}
+const drawBoldLines = (doc: jsPDF, lines: string[], x: number, yBase: number) => {
+    bold(doc, 8)
+    lines.forEach((line, i) => doc.text(line, x, yBase + i * DEST_LINE_H))
+}
+
 // ── Strana 1 ─────────────────────────────────────────────────────────────────
 
 const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     const L = 10, R = 200, W = R - L
     const adm = d.includeAdminFields !== false
     let y = 12
+
+    const effectiveEurAdv = d.advanceAmount
+        ?? (d.advances?.filter(a => (a.currency || 'EUR') === 'EUR').reduce((s, a) => s + a.amount, 0) || null)
 
     y += 4
     bold(doc, 11)
@@ -201,29 +220,36 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
         for (const trip of d.trips) {
             const depStr = [trip.departureLocation, fmtD(trip.departureDate), trip.departureTime].filter(Boolean).join(' ')
             const retStr = [trip.returnLocation || trip.departureLocation, fmtD(trip.returnDate), trip.returnTime].filter(Boolean).join(' ')
+            const destText = [trip.destination, ...(trip.waypoints ?? []).map(w => w.place)].filter(Boolean).join(' → ')
+            const destLines = splitBoldLines(doc, destText, colW - 4)
+            const rowH = 8 + (destLines.length - 1) * DEST_LINE_H
             const dataY = y + 1
-            boldVal(doc, depStr, c1 + 2, dataY + 4)
-            vLine(doc, c2, y, y + 8)
-            boldVal(doc, trip.destination, c2 + 2, dataY + 4)
-            vLine(doc, c3, y, y + 8)
-            boldVal(doc, trip.purpose ?? '', c3 + 2, dataY + 4)
-            vLine(doc, c4, y, y + 8)
-            boldVal(doc, retStr, c4 + 2, dataY + 4)
-            y += 8
+            const singleLineY = y + rowH / 2 + 1
+            boldVal(doc, depStr, c1 + 2, singleLineY)
+            vLine(doc, c2, y, y + rowH)
+            drawBoldLines(doc, destLines, c2 + 2, dataY + 4)
+            vLine(doc, c3, y, y + rowH)
+            boldVal(doc, trip.purpose ?? '', c3 + 2, singleLineY)
+            vLine(doc, c4, y, y + rowH)
+            boldVal(doc, retStr, c4 + 2, singleLineY)
+            y += rowH
             hLine(doc, y)
         }
     } else {
         const depStr = [d.departureLocation, fmtD(d.departureDate), d.departureTime].filter(Boolean).join(' ')
         const retStr = [d.returnLocation || d.departureLocation, fmtD(d.returnDate)].filter(Boolean).join(' ')
+        const destLines = splitBoldLines(doc, d.destination, colW - 4)
+        const rowH = 8 + (destLines.length - 1) * DEST_LINE_H
         const dataY = y + 1
-        boldVal(doc, depStr, c1 + 2, dataY + 4)
-        vLine(doc, c2, y, y + 8)
-        boldVal(doc, d.destination, c2 + 2, dataY + 4)
-        vLine(doc, c3, y, y + 8)
-        boldVal(doc, d.purpose ?? '', c3 + 2, dataY + 4)
-        vLine(doc, c4, y, y + 8)
-        boldVal(doc, retStr, c4 + 2, dataY + 4)
-        y += 8
+        const singleLineY = y + rowH / 2 + 1
+        boldVal(doc, depStr, c1 + 2, singleLineY)
+        vLine(doc, c2, y, y + rowH)
+        drawBoldLines(doc, destLines, c2 + 2, dataY + 4)
+        vLine(doc, c3, y, y + rowH)
+        boldVal(doc, d.purpose ?? '', c3 + 2, singleLineY)
+        vLine(doc, c4, y, y + rowH)
+        boldVal(doc, retStr, c4 + 2, singleLineY)
+        y += rowH
         hLine(doc, y)
     }
 
@@ -256,7 +282,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
 
         y += 1
         label(doc, 'Povolený preddavok EUR', L + 2, y + 2.5)
-        if (d.advanceAmount) boldVal(doc, fmtN(d.advanceAmount), L + 2, y + 6)
+        if (effectiveEurAdv) boldVal(doc, fmtN(effectiveEurAdv), L + 2, y + 6)
         vLine(doc, 100, y - 1, y + 9)
         label(doc, 'vyplatený dňa', 102, y + 2.5); hLine(doc, y + 7, 115, 155)
         vLine(doc, 155, y - 1, y + 9)
@@ -316,7 +342,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
 
         const sumRows = [
             { lbl: 'Účtovaná náhrada bola preskúmaná a upravená na', val: '', unit: 'EUR' },
-            { lbl: 'Vyplatený preddavok',  val: fmtN(d.advanceAmount), unit: 'EUR' },
+            { lbl: 'Vyplatený preddavok',  val: fmtN(effectiveEurAdv), unit: 'EUR' },
             { lbl: 'Doplatok- Preplatok',  val: '', unit: 'EUR' },
         ]
         if (d.showSlovom !== false) {
@@ -332,7 +358,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
             hLine(doc, y)
         })
 
-        const sigSecH = 42
+        const sigSecH = 25
         const sigY = y + 2
         const sigCols = [L, 60, 118, 162, R]
         const sigLabels = ['Dátum a podpis zamestnanca,\nktorý upravil vyúčtovanie', 'Dátum a podpis príjemcu\n(preukaz totožnosti)', 'Dátum a podpis\npokladníka', 'Schválil (dátum a podpis)']
@@ -703,7 +729,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         }
     }
 
-    const rowH = 5
+    const rowH = 4.8
     const tOff = rowH * 0.7
 
     for (const { od, pr } of dataPairs) {
@@ -747,7 +773,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         hLine(doc, y)
     }
 
-    if (y + 105 > PAGE_BOTTOM) {
+    if (y + 88 > PAGE_BOTTOM) {
         rect(doc, L, currentPageStartY, W, y - currentPageStartY)
         doc.addPage()
         setupFonts(doc)

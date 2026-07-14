@@ -4,22 +4,117 @@ import {
     Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, IconButton, MenuItem,
     Paper, Stack, Step, StepLabel, Stepper, TextField, Toolbar, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
-import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
-import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
+import { Add, ArrowBack, AttachFile, CheckCircle, Delete, DirectionsCar, Edit, ExpandLess, ExpandMore, Explore, FlagOutlined, InfoOutlined, InsertDriveFile, Person, Restaurant } from '@mui/icons-material'
+import type { TravelOrderAttachment, TravelOrderInput, Trip, TripSegment, TripWaypoint, StravneRates, EmployeeRecord, TravelPreferences } from '../types'
 import { DEFAULT_TRAVEL_PREFERENCES } from '../types'
 import { TRANSPORT_OPTIONS, STATUS_OPTIONS, CITY_SUGGESTIONS, PURPOSE_SUGGESTIONS } from '../constants'
 import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
-    emptyTrip, fmtDate, calcSegStravne, chainForward, chainBackward,
+    emptyTrip, fmtDate, calcSegStravne, chainForward, chainBackward, minutesBetween,
+    findSegmentOverlaps, sameDayWindowMinutes, scaleDurationsToFit,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
+import { addDays } from '../utils/date'
 import SegmentEditor from './SegmentEditor'
 import TimePickerField from './TimePickerField'
 import RouteMap from './RouteMap'
+import ConfirmDialog from './ConfirmDialog'
 
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+// Doprava sa dnes volí per cesta (predvolená) a per úsek (skutočná, môže byť
+// kombinovaná) - namiesto jedného order-level poľa preto zobrazujeme zoznam
+// reálne použitých spôsobov (zo segmentov, ak už boli vygenerované, inak z
+// predvolenej dopravy jednotlivých ciest).
+const transportSummaryLabel = (trips: Trip[]): string => {
+    const values = [...new Set(
+        trips.flatMap(t => t.segments?.length ? t.segments.map(s => s.transport) : [t.defaultTransport ?? 'car']),
+    )]
+    if (!values.length) return '—'
+    return values.map(v => TRANSPORT_OPTIONS.find(o => o.value === v)?.label ?? v).join(', ')
+}
+
+// Spôsoby dopravy, pri ktorých sa typicky kupuje lístok/letenka (na rozdiel od
+// vlastného/firemného auta) - úseky s týmito hodnotami sa ponúkajú v kroku
+// "Doprava" na zadanie ceny lístka.
+const TICKET_TRANSPORTS = ['train', 'bus', 'plane']
+
+// OSM/OSRM verejný demo server býva pri diaľniciach v strednej Európe
+// konzervatívnejší (nepočíta naplno s reálnym rýchlostným limitom), takže
+// skúsený vodič trasu bežne stihne aj o niečo rýchlejšie. Okno medzi dvomi
+// ručne zadanými časmi príchodu preto smie byť až o toto % kratšie než OSM
+// odhad, bez toho aby sa to bralo ako nezmestiteľné.
+const ROUTE_DURATION_TOLERANCE = 0.1
+
+// "Prepočítať úseky" celé pole segments zahodí a vygeneruje nanovo - bez
+// tohto by sa tak stratili aj ručne zadané výdavky (lístky, nocľažné, ...),
+// uložené práve na segmentoch. Spáruje staré a nové úseky podľa dátumu +
+// od/kam a prenesie výdavky tam, kde sa úsek nezmenil; vráti aj počet tých,
+// čo sa spárovať nedali (napr. lebo sa zmenil čas/trasa), nech sa dá na to
+// používateľa upozorniť namiesto tichej straty dát.
+const segKey = (s: { date: string; fromPlace: string; toPlace: string }) => `${s.date}|${s.fromPlace}|${s.toPlace}`
+
+const carryOverExpenses = (oldSegs: TripSegment[], newSegs: TripSegment[]): { segs: TripSegment[]; lost: number } => {
+    const byKey = new Map<string, NonNullable<TripSegment['expenses']>>()
+    for (const s of oldSegs) if (s.expenses?.length) byKey.set(segKey(s), s.expenses)
+    if (byKey.size === 0) return { segs: newSegs, lost: 0 }
+    const matched = new Set<string>()
+    const segs = newSegs.map(s => {
+        const expenses = byKey.get(segKey(s))
+        if (!expenses) return s
+        matched.add(segKey(s))
+        return { ...s, expenses }
+    })
+    const lost = [...byKey.keys()].filter(k => !matched.has(k)).length
+    return { segs, lost }
+}
+
+type Night = { si: number; date: string }
+type NightGroup = { si: number; place: string; dateFrom: string; dateTo: string; count: number; nights: Night[] }
+
+// Noci cesty odvodené priamo z dátumov v úsekoch - každý dátum okrem
+// posledného (deň návratu, za ním už v rámci cesty žiadna noc nenasleduje)
+// je jedna noc. Miesto noci = toPlace POSLEDNÉHO úseku daného dňa (rovnaký
+// princíp ako `lastIdx` v pdf/travelOrderPdf.ts, ktorý tým istým spôsobom
+// priraďuje dennú sumu stravného poslednému úseku dňa).
+// Zámerne nepočítame len s explicitným "pobytovým" úsekom (rovnaké miesto,
+// 00:00-00:00) - ten sa generuje iba pri 2+ nociach na jednom mieste, takže
+// by úplne vynechal najbežnejší prípad, jednu noc medzi dvoma jazdnými úsekmi.
+//
+// Po sebe idúce noci na ROVNAKOM mieste sa zlúčia do jednej skupiny (jeden
+// hotel na viac nocí = jedna cena). Ak je každá noc inde, skupiny sa
+// nezlúčia - každá zostane samostatná. `nights` v skupine drží aj jednotlivé
+// noci (vlastný segment na noc), takže UI vie skupinu na požiadanie
+// "rozbaliť" a zadať cenu osobitne pre každý deň (napr. iný hotel/cena
+// napriek rovnakému názvu miesta). Súčet v `computeFinancials`/PDF je vždy
+// súčet cez všetky úseky, takže je jedno, či je cena na jednom alebo na
+// viacerých segmentoch. `dateTo` je dátum poslednej noci - deň odchodu
+// (check-out) je o deň neskôr.
+const tripNights = (trip: Trip): NightGroup[] => {
+    const dates = [...new Set(trip.segments.map(s => s.date))].filter(Boolean).sort()
+    if (dates.length < 2) return []
+    const lastDate = dates[dates.length - 1]
+    const groups: NightGroup[] = []
+    for (const date of dates) {
+        if (date === lastDate) continue
+        let lastIdx = -1
+        trip.segments.forEach((s, si) => { if (s.date === date) lastIdx = si })
+        if (lastIdx === -1) continue
+        const place = trip.segments[lastIdx].toPlace || trip.segments[lastIdx].fromPlace
+        const prev = groups[groups.length - 1]
+        if (prev && prev.place === place) {
+            prev.dateTo = date
+            prev.si = lastIdx
+            prev.count += 1
+            prev.nights.push({ si: lastIdx, date })
+        } else {
+            groups.push({ si: lastIdx, place, dateFrom: date, dateTo: date, count: 1, nights: [{ si: lastIdx, date }] })
+        }
+    }
+    return groups
+}
 
 type DialogProps = {
     initial: TravelOrderInput
@@ -36,6 +131,8 @@ type DialogProps = {
     onDeleteAttachment?: (tempId: string, id: string) => Promise<void>
     onOpenAttachment?: (tempId: string, id: string) => void
     onReadAttachment?: (tempId: string, id: string) => Promise<{ buffer: ArrayBuffer; mimeType: string } | null>
+    onFetchExchangeRates?: (isoDate: string) => Promise<{ date: string; rates: Record<string, number> } | null>
+    onFetchFuelPrice?: (fuelType: string, isoDate: string) => Promise<{ price: number; weekCode: string; weekLabel: string } | null>
 }
 
 const STEPS = ['Zamestnanec', 'Cesta', 'Doprava', 'Náhrady', 'Súhrn']
@@ -95,7 +192,7 @@ type PreviewProps = {
 
 const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceByCurrency, balanceByCurrency, ratesHistory, mult, restricted }: PreviewProps) => {
     const trips = form.trips ?? []
-    const transportLabel = TRANSPORT_OPTIONS.find(o => o.value === form.transportType)?.label ?? '—'
+    const transportLabel = transportSummaryLabel(trips)
     const totalCar = (fuelCost ?? 0) + (amortization ?? 0)
 
     return (
@@ -116,7 +213,8 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
             {trips.map((trip, ti) => {
                 const depLoc = trip.departureLocation ?? null
                 const dest   = trip.destination || null
-                const route  = depLoc && dest ? `${depLoc} → ${dest}` : dest ?? '—'
+                const stops  = [dest, ...(trip.waypoints ?? []).map(w => w.place)].filter(Boolean)
+                const route  = depLoc && stops.length ? `${depLoc} → ${stops.join(' → ')}` : (stops.join(' → ') || '—')
                 const km     = trip.segments.reduce((sum, s) => sum + (s.km ?? 0), 0)
                 const daily  = calcDailyStravne(trip.segments, ratesHistory)
                 const stravneByCur: Record<string, number> = {}
@@ -144,7 +242,7 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
                         ))}
                         {!restricted && trip.routeCoordinates && trip.routeCoordinates.length > 0 && (
                             <Box sx={{ mt: 1 }}>
-                                <RouteMap coordinates={trip.routeCoordinates} height={110} />
+                                <RouteMap coordinates={trip.routeCoordinates} stops={trip.routeStops ?? undefined} height={110} />
                             </Box>
                         )}
                     </SummaryCard>
@@ -184,7 +282,7 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
 
 // ── Main dialog ──────────────────────────────────────────────────────────────
 
-const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, approvalMode = 'direct', onSave, onClose, onAddAttachment, onAddAttachmentFromPath, onDeleteAttachment, onOpenAttachment, onReadAttachment }: DialogProps) => {
+const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, preferences, approvalMode = 'direct', onSave, onClose, onAddAttachment, onAddAttachmentFromPath, onDeleteAttachment, onOpenAttachment, onReadAttachment, onFetchExchangeRates, onFetchFuelPrice }: DialogProps) => {
     const isMobile = useMediaQuery('(max-width:599px)')
     const prefs = preferences ?? DEFAULT_TRAVEL_PREFERENCES
     const [form, setForm] = useState<TravelOrderInput>(initial)
@@ -201,6 +299,15 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     // svojím vlastným poľom "Cieľ cesty" a vlastnými návrhmi.
     const [osmDestSuggestions, setOsmDestSuggestions] = useState<Record<number, OsmPlaceSuggestion[]>>({})
     const destSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // To isté, ale pre rozrobené pole "Ďalší cieľ" v pridávaní zastávky.
+    const [waypointOsmSuggestions, setWaypointOsmSuggestions] = useState<Record<number, OsmPlaceSuggestion[]>>({})
+    const waypointSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Rozrobená (ešte nepridaná) zastávka za trasu - kľúčované podľa indexu cesty (`ti`).
+    const [newWaypointDraft, setNewWaypointDraft] = useState<Record<number, { place: string; date: string; time: string; lat: number | null; lon: number | null }>>({})
+    // Či je pre danú cestu (`ti`) rozbalený formulár na pridanie ďalšieho cieľa.
+    const [addingWaypointFor, setAddingWaypointFor] = useState<Record<number, boolean>>({})
+    // Chyba pri generovaní úsekov - napr. cieľ mimo intervalu odchod-návrat cesty.
+    const [waypointTimeErrors, setWaypointTimeErrors] = useState<Record<number, string[]>>({})
     const [activeStep, setActiveStep] = useState(0)
     const scrollRef = useRef<HTMLDivElement>(null)
     const tempIdRef = useRef<string>(isNew ? crypto.randomUUID() : String(orderId ?? crypto.randomUUID()))
@@ -211,6 +318,16 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const [collaboratorInput, setCollaboratorInput] = useState('')
     const [previewState, setPreviewState] = useState<{ url: string; mimeType: string; name: string } | null>(null)
     const [collapsedTrips, setCollapsedTrips] = useState<Set<number>>(new Set())
+    const [scaledTrips, setScaledTrips] = useState<Set<number>>(new Set())
+    // Počet výdavkov (lístky, nocľažné, ...), ktoré sa pri poslednom prepočte
+    // úsekov nepodarilo spárovať so starým úsekom, takže sa stratili.
+    const [lostExpenses, setLostExpenses] = useState<Record<number, number>>({})
+    // Skupiny nocľažného, ktoré si používateľ ručne "rozbalil" na zadanie ceny
+    // osobitne pre každú noc namiesto jednej spoločnej sumy - kľúč `${ti}|${dateFrom}`.
+    const [expandedNights, setExpandedNights] = useState<Set<string>>(new Set())
+    const [rateFetch, setRateFetch] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null })
+    const [fuelPriceFetch, setFuelPriceFetch] = useState<{ loading: boolean; error: string | null; weekLabel?: string }>({ loading: false, error: null })
+    const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null)
 
     const set = <K extends keyof TravelOrderInput>(field: K, value: TravelOrderInput[K]) =>
         setForm(f => ({ ...f, [field]: value }))
@@ -225,6 +342,42 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     }, [form.trips])
 
     const effectiveCarKm = autoCarKm ?? form.distanceKm ?? null
+
+    const ticketSegments = useMemo(() => {
+        const rows: { ti: number; si: number; seg: TripSegment }[] = []
+        ;(form.trips ?? []).forEach((t, ti) => {
+            t.segments.forEach((seg, si) => {
+                if (TICKET_TRANSPORTS.includes(seg.transport)) rows.push({ ti, si, seg })
+            })
+        })
+        return rows
+    }, [form.trips])
+
+    const staySegments = useMemo(() => {
+        const rows: ({ ti: number } & NightGroup)[] = []
+        ;(form.trips ?? []).forEach((t, ti) => {
+            for (const n of tripNights(t)) rows.push({ ti, ...n })
+        })
+        return rows
+    }, [form.trips])
+
+    // Zapíše/aktualizuje jeden konkrétny typ výdavku na danom úseku - používa sa
+    // pre rýchle zadanie ceny lístka ("cestovne") aj nocľažného ("noclazne")
+    // priamo z prehľadových kariet, bez nutnosti otvárať editor úsekov.
+    const updateSegExpense = (ti: number, si: number, expType: string, amount: number, currency: string) => {
+        const trip = (form.trips ?? [])[ti]
+        if (!trip) return
+        const segs = trip.segments.map((s, idx) => {
+            if (idx !== si) return s
+            const expenses = s.expenses ?? []
+            const expIdx = expenses.findIndex(e => e.type === expType)
+            const newExpenses = expIdx >= 0
+                ? expenses.map((e, j) => j === expIdx ? { ...e, amount, currency } : e)
+                : [...expenses, { type: expType, amount, currency }]
+            return { ...s, expenses: newExpenses }
+        })
+        updateTrip(ti, 'segments', segs)
+    }
 
     const fuelCost = useMemo(() => {
         if (form.applyFuelCost === false) return null
@@ -253,6 +406,84 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             .filter(c => c !== 'EUR')
         return [...new Set(curs)]
     }, [form.trips, allCountries])
+
+    const earliestDeparture = useMemo(() => {
+        const departures = (form.trips ?? []).map(t => t.departureDate).filter(Boolean) as string[]
+        return departures.sort()[0] ?? form.departureDate
+    }, [form.trips, form.departureDate])
+
+    // Kurz NBS sa pri zmene zahraničných mien alebo dátumu odchodu automaticky
+    // prepíše hodnotou zo dňa PRED odchodom (na rozdiel od PHM, ktorá sa berie
+    // v deň začiatku cesty). Manuálna úprava kurzu medzitým efekt znovu nespustí.
+    useEffect(() => {
+        if (!onFetchExchangeRates || foreignCurrencies.length === 0 || !earliestDeparture) return
+        const d = new Date(`${earliestDeparture}T00:00:00Z`)
+        d.setUTCDate(d.getUTCDate() - 1)
+        const refDate = d.toISOString().slice(0, 10)
+
+        let cancelled = false
+        setRateFetch({ loading: true, error: null })
+        onFetchExchangeRates(refDate).then(result => {
+            if (cancelled) return
+            if (!result) {
+                setRateFetch({ loading: false, error: 'Kurz sa nepodarilo načítať (žiadna odpoveď), zadaj ho ručne.' })
+                return
+            }
+            // Funkcionálny update číta AKTUÁLNY f.exchangeRates namiesto zastaraného
+            // `form.exchangeRates` zo závierky efektu - inak by ručná úprava kurzu
+            // spravená počas čakania na túto odpoveď mohla byť ticho prepísaná.
+            setForm(f => ({
+                ...f,
+                exchangeRateDate: result.date,
+                exchangeRates: {
+                    ...f.exchangeRates,
+                    ...Object.fromEntries(foreignCurrencies
+                        .filter(c => result.rates[c] != null)
+                        .map(c => [c, result.rates[c]])),
+                } as Record<string, number>,
+            }))
+            const missing = foreignCurrencies.filter(c => result.rates[c] == null)
+            setRateFetch({
+                loading: false,
+                error: missing.length ? `Kurz sa nenašiel pre: ${missing.join(', ')} - zadaj ručne.` : null,
+            })
+        }).catch(err => {
+            if (!cancelled) {
+                setRateFetch({ loading: false, error: `Kurz sa nepodarilo načítať: ${err instanceof Error ? err.message : String(err)}` })
+            }
+        })
+        return () => { cancelled = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onFetchExchangeRates, foreignCurrencies, earliestDeparture])
+
+    // Cena PHM sa pri zmene druhu paliva alebo dátumu odchodu automaticky
+    // prepíše hodnotou zo Štatistického úradu SR (deň začiatku cesty — na
+    // rozdiel od kurzu meny, ktorý sa berie zo dňa PRED odchodom).
+    // Manuálna úprava poľa medzitým efekt znovu nespustí.
+    useEffect(() => {
+        if (!onFetchFuelPrice || form.applyFuelCost === false || !earliestDeparture) return
+        const fuelType = form.fuelType ?? (form.isElectric ? 'electric' : 'diesel')
+        const refDate = earliestDeparture
+
+        let cancelled = false
+        setFuelPriceFetch({ loading: true, error: null })
+        onFetchFuelPrice(fuelType, refDate).then(result => {
+            if (cancelled) return
+            if (!result) {
+                setFuelPriceFetch({ loading: false, error: 'Cena PHM sa nenašla, zadaj ju ručne.' })
+                return
+            }
+            set('fuelPricePerLiter', result.price)
+            set('fuelPriceWeek', result.weekCode)
+            setFuelPriceFetch({ loading: false, error: null, weekLabel: result.weekLabel })
+        }).catch(err => {
+            if (!cancelled) {
+                setFuelPriceFetch({ loading: false, error: `Cenu PHM sa nepodarilo načítať: ${err instanceof Error ? err.message : String(err)}` })
+            }
+        })
+        return () => { cancelled = true }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onFetchFuelPrice, form.fuelType, form.isElectric, earliestDeparture, form.applyFuelCost])
 
     const mult = form.stravneMultiplier ?? 1
 
@@ -344,11 +575,25 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         for (const [i, trip] of (form.trips ?? []).entries()) {
             if (trip.returnDate && trip.returnDate < trip.departureDate)
                 errors.push(`Cesta ${i + 1}: dátum návratu (${trip.returnDate}) je pred dátumom odchodu (${trip.departureDate}).`)
+            for (const { date, a, b } of findSegmentOverlaps(trip.segments))
+                errors.push(`Cesta ${i + 1}: prekrývajúce sa časy úsekov ${fmtDate(date)} - ${a.fromPlace || '?'}–${a.toPlace || '?'} (${a.fromTime}–${a.toTime}) a ${b.fromPlace || '?'}–${b.toPlace || '?'} (${b.fromTime}–${b.toTime}).`)
+            // Zastávky (waypoints) sa overia znova aj tu - nielen pri "Generovať úseky" -
+            // lebo dátumy cesty sa mohli zmeniť už po vygenerovaní úsekov, bez opätovného prepočtu.
+            const depTime = trip.departureTime, retTime = trip.returnTime
+            if (depTime && retTime) {
+                const retDate = trip.returnDate ?? trip.departureDate
+                for (const wp of trip.waypoints ?? []) {
+                    const afterDeparture = minutesBetween(trip.departureDate, depTime, wp.arrivalDate, wp.arrivalTime) >= 0
+                    const beforeReturn = minutesBetween(wp.arrivalDate, wp.arrivalTime, retDate, retTime) >= 0
+                    if (!afterDeparture || !beforeReturn)
+                        errors.push(`Cesta ${i + 1}: cieľ "${wp.place}" (príchod ${fmtDate(wp.arrivalDate)} ${wp.arrivalTime}) je mimo intervalu odchod (${fmtDate(trip.departureDate)} ${depTime}) - návrat (${fmtDate(retDate)} ${retTime}).`)
+                }
+            }
         }
         // Naplánovaný príkaz sa vytvára pred cestou - poznáme len základné údaje,
         // detaily dopravy a náhrad sa dopĺňajú až po návrate.
         if (minimal) return errors
-        if (form.transportType === 'car' && !form.ecv?.trim())
+        if (autoCarKm != null && !form.ecv?.trim())
             errors.push('Vlastné auto (AUV) vyžaduje vyplnené EČV.')
         if ((form.trips ?? []).flatMap(t => t.segments).some(s => (s.km ?? 0) < 0))
             errors.push('Km nesmú byť záporné.')
@@ -389,6 +634,35 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         set('trips', trips)
     }
 
+    const emptyWaypointDraft = { place: '', date: '', time: '', lat: null as number | null, lon: null as number | null }
+
+    const updateWaypointDraft = (ti: number, patch: Partial<typeof emptyWaypointDraft>) =>
+        setNewWaypointDraft(prev => ({ ...prev, [ti]: { ...emptyWaypointDraft, ...prev[ti], ...patch } }))
+
+    const addWaypoint = (ti: number) => {
+        const draft = newWaypointDraft[ti]
+        const trip = (form.trips ?? [])[ti]
+        if (!trip || !draft?.place?.trim() || !draft.date || !draft.time) return
+        const wp: TripWaypoint = {
+            place: draft.place.trim(), arrivalDate: draft.date, arrivalTime: draft.time,
+            lat: draft.lat, lon: draft.lon,
+        }
+        // Zoradené podľa príchodu - poradie zastávok v zozname sa berie ako
+        // poradie na trase, takže musí zodpovedať skutočnému chronologickému sledu.
+        const sorted = [...(trip.waypoints ?? []), wp]
+            .sort((x, y) => `${x.arrivalDate}T${x.arrivalTime}`.localeCompare(`${y.arrivalDate}T${y.arrivalTime}`))
+        updateTrip(ti, 'waypoints', sorted)
+        setNewWaypointDraft(prev => ({ ...prev, [ti]: emptyWaypointDraft }))
+    }
+
+    const removeWaypoint = (ti: number, wi: number) => {
+        const trip = (form.trips ?? [])[ti]
+        if (!trip) return
+        const next = [...(trip.waypoints ?? [])]
+        next.splice(wi, 1)
+        updateTrip(ti, 'waypoints', next)
+    }
+
     const searchDestination = (ti: number, query: string) => {
         if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
         if (query.trim().length < 3) { setOsmDestSuggestions(s => ({ ...s, [ti]: [] })); return }
@@ -398,10 +672,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         }, 400)
     }
 
+    const searchWaypointPlace = (ti: number, query: string) => {
+        if (waypointSearchTimer.current) clearTimeout(waypointSearchTimer.current)
+        if (query.trim().length < 3) { setWaypointOsmSuggestions(s => ({ ...s, [ti]: [] })); return }
+        waypointSearchTimer.current = setTimeout(async () => {
+            const results = await searchOsmPlaces(query)
+            setWaypointOsmSuggestions(s => ({ ...s, [ti]: results }))
+        }, 400)
+    }
+
     // Rozbehnutý debounce vyhľadávania cieľa nesmie po zatvorení dialógu doletieť
     // s výsledkom (setState na odmontovanej komponente / zbytočná sieťová požiadavka).
     useEffect(() => () => {
         if (destSearchTimer.current) clearTimeout(destSearchTimer.current)
+        if (waypointSearchTimer.current) clearTimeout(waypointSearchTimer.current)
     }, [])
 
     const fetchKmByCountry = async (ti: number) => {
@@ -432,7 +716,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const trip = (form.trips ?? [])[ti]
         if (!trip) return
         const route: OsmCountryLeg[] | null = routeOption?.countries ?? null
-        const trans     = form.transportType ?? 'car'
+        const trans     = trip.defaultTransport ?? 'car'
         const depLoc    = trip.departureLocation ?? ''
         const retLoc    = trip.returnLocation ?? depLoc
         const depDate   = trip.departureDate
@@ -448,19 +732,26 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         const mkSeg = ({ date, from, fromTime, to, toTime = '', country = 'SK', km = null }: SegOpts): TripSegment =>
             ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km, stravne: null, country, nbsDate: null })
 
-        const d0 = new Date(depDate), d1 = new Date(retDate)
-        const dayDiff = Math.round((d1.getTime() - d0.getTime()) / 86_400_000)
-        const midDays: string[] = []
-        for (let d = 1; d < dayDiff; d++) {
-            const nd = new Date(d0)
-            nd.setDate(nd.getDate() + d)
-            midDays.push(nd.toISOString().split('T')[0])
-        }
+        const dayDiff = Math.round((new Date(retDate).getTime() - new Date(depDate).getTime()) / 86_400_000)
         const overnight   = dayDiff >= 1
         const arrToTime   = overnight ? '00:00' : ''
         const retFromTime = overnight ? '00:00' : ''
-        const midSegs = (ctry: string) => midDays.map(date =>
-            mkSeg({ date, from: dest, fromTime: '00:00', to: dest, toTime: '00:00', country: ctry }))
+        // Dni "na mieste" medzi príchodom a odchodom z destinácie - počítané od
+        // SKUTOČNÝCH dátumov príchodu/odchodu (môžu sa líšiť od depDate/retDate
+        // celej cesty pri viacdňovej jazde, napr. SK -> južné Španielsko), nie
+        // od nominálnych dátumov celej cesty - inak by placeholder deň kolidoval
+        // so segmentom skutočného príchodu/odchodu, ktorý naň zasahuje.
+        const midSegsBetween = (ctry: string, arrivalDate: string, departureDate: string) => {
+            const days: string[] = []
+            const a = new Date(arrivalDate)
+            for (let d = 1; ; d++) {
+                const nd = new Date(a)
+                nd.setDate(nd.getDate() + d)
+                if (nd.toISOString().split('T')[0] >= departureDate) break
+                days.push(nd.toISOString().split('T')[0])
+            }
+            return days.map(date => mkSeg({ date, from: dest, fromTime: '00:00', to: dest, toTime: '00:00', country: ctry }))
+        }
 
         // Súčet km/trvania pre všetky úseky danej krajiny v trase - trasa môže tú
         // istú krajinu obsahovať aj viackrát (napr. keď sa nakrátko vráti cez hranicu).
@@ -474,26 +765,29 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         }
 
         let segs: TripSegment[]
+        let scaledTimes = false
+        const windowMin = sameDayWindowMinutes(depDate, depTime, retDate, retTime)
 
         if (foreign) {
             if (route && route.length > 1) {
                 // Multi-krajinová trasa — vygeneruj správne hraničné úseky
                 const codes = route.map(r => r.country)
                 const hr = (a: string, b: string) => `hr. ${a}-${b}`
-                const durations = route.map(r => r.durationMin)
-                const outTimes = depTime ? chainForward(depTime, durations) : null
-                const retTimes = retTime ? chainBackward(retTime, [...durations].reverse()) : null
+                const { durations, scaled } = scaleDurationsToFit(route.map(r => r.durationMin), windowMin)
+                if (scaled) scaledTimes = true
+                const outTimes = depTime ? chainForward(depDate, depTime, durations) : null
+                const retTimes = retTime ? chainBackward(retDate, retTime, [...durations].reverse()) : null
 
                 const outSegs = route.map(({ country, km }, i) => {
                     const isLast = i === codes.length - 1
                     return mkSeg({
-                        date: depDate,
+                        date: outTimes ? outTimes[i].date : depDate,
                         from: i === 0 ? depLoc : hr(codes[i - 1], codes[i]),
-                        fromTime: i === 0 ? depTime : (outTimes ? outTimes[i] : ''),
+                        fromTime: i === 0 ? depTime : (outTimes ? outTimes[i].time : ''),
                         to: isLast ? dest : hr(codes[i], codes[i + 1]),
                         // Uprednostni reálne dopočítaný čas príchodu pred sentinelom "00:00" -
                         // ten je len záložná hodnota pre výpočet stravného, keď reálny čas nepoznáme.
-                        toTime: isLast ? ((outTimes ? outTimes[i + 1] : '') || arrToTime) : (outTimes ? outTimes[i + 1] : ''),
+                        toTime: isLast ? ((outTimes ? outTimes[i + 1].time : '') || arrToTime) : (outTimes ? outTimes[i + 1].time : ''),
                         country, km,
                     })
                 })
@@ -502,54 +796,322 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     const rev = [...codes].reverse()
                     const isLast = i === rev.length - 1
                     return mkSeg({
-                        date: retDate,
+                        date: retTimes ? retTimes[i].date : retDate,
                         from: i === 0 ? dest : hr(rev[i - 1], rev[i]),
-                        fromTime: i === 0 ? ((retTimes ? retTimes[i] : '') || retFromTime) : (retTimes ? retTimes[i] : ''),
+                        fromTime: i === 0 ? ((retTimes ? retTimes[i].time : '') || retFromTime) : (retTimes ? retTimes[i].time : ''),
                         to: isLast ? retLoc : hr(rev[i], rev[i + 1]),
-                        toTime: isLast ? retTime : (retTimes ? retTimes[i + 1] : ''),
+                        toTime: isLast ? retTime : (retTimes ? retTimes[i + 1].time : ''),
                         country, km,
                     })
                 })
 
-                segs = [...outSegs, ...midSegs(destCtry.code), ...retSegs]
+                const arrivalDate = outTimes ? outTimes[outTimes.length - 1].date : depDate
+                const departureFromDestDate = retTimes ? retTimes[0].date : retDate
+                segs = [...outSegs, ...midSegsBetween(destCtry.code, arrivalDate, departureFromDestDate), ...retSegs]
             } else {
                 // Fallback: jedna zahraničná krajina alebo OSM zlyhalo - dva úseky (SK, cieľová krajina)
                 const bp = destCtry.borderPrefix
                 const sk = sumCountry('SK')
                 const dst = sumCountry(destCtry.code)
-                const durations = sk.durationMin != null && dst.durationMin != null ? [sk.durationMin, dst.durationMin] : null
-                const outTimes = depTime && durations ? chainForward(depTime, durations) : null
-                const retTimes = retTime && durations ? chainBackward(retTime, [...durations].reverse()) : null
+                const durationsRaw = sk.durationMin != null && dst.durationMin != null ? [sk.durationMin, dst.durationMin] : null
+                const durScaled = durationsRaw ? scaleDurationsToFit(durationsRaw, windowMin) : null
+                if (durScaled?.scaled) scaledTimes = true
+                const durations = durScaled?.durations ?? null
+                const outTimes = depTime && durations ? chainForward(depDate, depTime, durations) : null
+                const retTimes = retTime && durations ? chainBackward(retDate, retTime, [...durations].reverse()) : null
 
+                const arrivalDate = outTimes ? outTimes[2].date : depDate
+                const departureFromDestDate = retTimes ? retTimes[0].date : retDate
                 segs = [
-                    mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: `hr. SK-${bp}`, toTime: outTimes ? outTimes[1] : '', country: 'SK', km: sk.km }),
-                    mkSeg({ date: depDate, from: `hr. SK-${bp}`, fromTime: outTimes ? outTimes[1] : '', to: dest, toTime: (outTimes ? outTimes[2] : '') || arrToTime, country: destCtry.code, km: dst.km }),
-                    ...midSegs(destCtry.code),
-                    mkSeg({ date: retDate, from: dest, fromTime: (retTimes ? retTimes[0] : '') || retFromTime, to: `hr. ${bp}-SK`, toTime: retTimes ? retTimes[1] : '', country: destCtry.code, km: dst.km }),
-                    mkSeg({ date: retDate, from: `hr. ${bp}-SK`, fromTime: retTimes ? retTimes[1] : '', to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
+                    mkSeg({ date: outTimes ? outTimes[0].date : depDate, from: depLoc, fromTime: depTime, to: `hr. SK-${bp}`, toTime: outTimes ? outTimes[1].time : '', country: 'SK', km: sk.km }),
+                    mkSeg({ date: outTimes ? outTimes[1].date : depDate, from: `hr. SK-${bp}`, fromTime: outTimes ? outTimes[1].time : '', to: dest, toTime: (outTimes ? outTimes[2].time : '') || arrToTime, country: destCtry.code, km: dst.km }),
+                    ...midSegsBetween(destCtry.code, arrivalDate, departureFromDestDate),
+                    mkSeg({ date: retTimes ? retTimes[0].date : retDate, from: dest, fromTime: (retTimes ? retTimes[0].time : '') || retFromTime, to: `hr. ${bp}-SK`, toTime: retTimes ? retTimes[1].time : '', country: destCtry.code, km: dst.km }),
+                    mkSeg({ date: retTimes ? retTimes[1].date : retDate, from: `hr. ${bp}-SK`, fromTime: retTimes ? retTimes[1].time : '', to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
                 ]
             }
         } else {
             const sk = sumCountry('SK')
-            const outTimes = depTime && sk.durationMin != null ? chainForward(depTime, [sk.durationMin]) : null
-            const retTimes = retTime && sk.durationMin != null ? chainBackward(retTime, [sk.durationMin]) : null
+            const durScaled = sk.durationMin != null ? scaleDurationsToFit([sk.durationMin], windowMin) : null
+            if (durScaled?.scaled) scaledTimes = true
+            const skDuration = durScaled?.durations[0] ?? null
+            const outTimes = depTime && skDuration != null ? chainForward(depDate, depTime, [skDuration]) : null
+            const retTimes = retTime && skDuration != null ? chainBackward(retDate, retTime, [skDuration]) : null
+            const arrivalDate = outTimes ? outTimes[1].date : depDate
+            const departureFromDestDate = retTimes ? retTimes[0].date : retDate
             segs = [
-                mkSeg({ date: depDate, from: depLoc, fromTime: depTime, to: dest, toTime: (outTimes ? outTimes[1] : '') || arrToTime, country: 'SK', km: sk.km }),
-                ...midSegs('SK'),
-                mkSeg({ date: retDate, from: dest, fromTime: (retTimes ? retTimes[0] : '') || retFromTime, to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
+                mkSeg({ date: outTimes ? outTimes[0].date : depDate, from: depLoc, fromTime: depTime, to: dest, toTime: (outTimes ? outTimes[1].time : '') || arrToTime, country: 'SK', km: sk.km }),
+                ...midSegsBetween('SK', arrivalDate, departureFromDestDate),
+                mkSeg({ date: retTimes ? retTimes[0].date : retDate, from: dest, fromTime: (retTimes ? retTimes[0].time : '') || retFromTime, to: retLoc, toTime: retTime, country: 'SK', km: sk.km }),
             ]
         }
 
+        const { segs: keptSegs, lost } = carryOverExpenses(trip.segments, segs)
+        const destCoord = routeOption?.coordinates?.[routeOption.coordinates.length - 1]
+            ?? (trip.destinationLat != null && trip.destinationLon != null ? { lat: trip.destinationLat, lon: trip.destinationLon } : null)
         const trips = [...(form.trips ?? [])]
         trips[ti] = {
             ...trip,
             routeCoordinates: routeOption?.coordinates ?? null,
-            segments: segs.map(s => ({
+            routeStops: destCoord ? [{ lat: destCoord.lat, lon: destCoord.lon, label: '1' }] : null,
+            segments: keptSegs.map(s => ({
                 ...s,
                 stravne: calcSegStravne(s.fromTime, s.toTime, s.country ?? 'SK', getRatesForDate(ratesHistory, s.date)),
             })),
         }
         set('trips', trips)
+        setScaledTrips(prev => {
+            const has = prev.has(ti)
+            if (scaledTimes === has) return prev
+            const next = new Set(prev)
+            if (scaledTimes) next.add(ti); else next.delete(ti)
+            return next
+        })
+        setLostExpenses(prev => lost > 0 ? { ...prev, [ti]: lost } : (ti in prev ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== String(ti))) : prev))
+    }
+
+    // Ako buildSegmentsFromRoute, ale s ľubovoľným počtom ďalších cieľov (waypoints)
+    // ZA destination - poradie je depLoc -> destination -> waypoint1 -> waypoint2...
+    // destination (prvý cieľ) nemá vlastný čas, ten úsek sa odhaduje presne ako
+    // doteraz. Každý ďalší cieľ má RUČNE zadaný dátum+čas príchodu - pre úsek
+    // medzi dvomi bodmi, kde poznáme oba konce (skutočný čas), sa OSM-odhadnuté
+    // trvania jednotlivých hraničných úsekov proporčne roztiahnu/zmenšia presne
+    // na skutočne uplynutý čas - teda skutočný čas vždy vyhráva nad odhadom.
+    // Cesta späť (posledný cieľ -> returnLocation) je nezmenená - jeden skok, auto-odhad.
+    const buildWaypointSegments = async (ti: number) => {
+        const trip = (form.trips ?? [])[ti]
+        if (!trip) return
+        const trans     = trip.defaultTransport ?? 'car'
+        const depLoc    = trip.departureLocation ?? ''
+        const retLoc    = trip.returnLocation ?? depLoc
+        const depDate   = trip.departureDate
+        const retDate   = trip.returnDate ?? depDate
+        const depTime   = trip.departureTime ?? ''
+        const retTime   = trip.returnTime ?? ''
+        const dest      = trip.destination
+        const waypoints = trip.waypoints ?? []
+        const fallbackCountry = trip.country ?? 'SK'
+        // Ak nepoznáme reálny čas príchodu (napr. chýba depTime), použi ako
+        // záložnú hodnotu polnoc - len pri viacdňovej ceste, rovnako ako
+        // buildSegmentsFromRoute - inak by stravné za daný deň vyšlo nulové.
+        const overnightWhole = Math.round((new Date(retDate).getTime() - new Date(depDate).getTime()) / 86_400_000) >= 1
+        const arrToTime = overnightWhole ? '00:00' : ''
+
+        type SegOpts = { date: string; from: string; fromTime: string; to: string; toTime?: string; country?: string; km?: number | null }
+        const mkSeg = ({ date, from, fromTime, to, toTime = '', country = 'SK', km = null }: SegOpts): TripSegment =>
+            ({ date, fromPlace: from, fromTime, toPlace: to, toTime, transport: trans, km, stravne: null, country, nbsDate: null })
+        const hr = (a: string, b: string) => `hr. ${a}-${b}`
+        // Dátumy striktne medzi dvomi dňami (bez okrajov) - napr. dni strávené
+        // na mieste medzi príchodom a ďalším odchodom.
+        const datesBetween = (fromDateExclusive: string, toDateExclusive: string): string[] => {
+            const days: string[] = []
+            const a0 = new Date(fromDateExclusive)
+            for (let d = 1; ; d++) {
+                const nd = new Date(a0)
+                nd.setDate(nd.getDate() + d)
+                const s = nd.toISOString().split('T')[0]
+                if (s >= toDateExclusive) break
+                days.push(s)
+            }
+            return days
+        }
+
+        // destination (prvý cieľ) nemá vlastný ručný čas - úsek doňho sa odhaduje
+        // dopredu presne ako doteraz. Každý ďalší pridaný cieľ (waypoints) je
+        // ĎALŠIA zastávka ZA destination, s ručne zadaným časom príchodu -
+        // odchod z predchádzajúceho miesta sa počíta ODZADU (príchod mínus
+        // trvanie trasy), nie naťahovaním/zmenšovaním úsekov aby "sedeli".
+        type RoutePoint = { place: string; lat: number | null; lon: number | null; date: string | null; time: string | null }
+        const points: RoutePoint[] = [
+            { place: depLoc, lat: null, lon: null, date: depDate, time: depTime || null },
+            { place: dest, lat: trip.destinationLat ?? null, lon: trip.destinationLon ?? null, date: null, time: null },
+            ...waypoints.map(w => ({ place: w.place, lat: w.lat ?? null, lon: w.lon ?? null, date: w.arrivalDate, time: w.arrivalTime })),
+        ]
+        const finalPoint = points[points.length - 1]
+
+        // SEKVENČNE, nie Promise.all - Nominatim (geokódovanie textových miest) má
+        // fair-use limit cca 1 request/s a pri 2+ zastávkach by súbežné volania za
+        // každý úsek (aj OSRM smerovanie) prekročili limit a potichu zlyhali (rovnaký
+        // druh problému, aký spôsobovalo predtým BigDataCloud - pozri hlavičku
+        // utils/osmDistance.ts) - výsledkom bola prázdna mapa aj chýbajúce km/krajiny
+        // na neskorších úsekoch.
+        const legRouteOptions: (Awaited<ReturnType<typeof calcOsmRouteOptions>>)[] = []
+        for (let i = 0; i < points.length - 1; i++) {
+            const p = points[i]
+            const next = points[i + 1]
+            const fromArg = p.lat != null && p.lon != null ? { lat: p.lat, lon: p.lon } : p.place.trim()
+            const toArg = next.lat != null && next.lon != null ? { lat: next.lat, lon: next.lon } : next.place.trim()
+            legRouteOptions.push(await calcOsmRouteOptions(fromArg, toArg))
+        }
+
+        const outSegs: TripSegment[] = []
+        const legWarnings: string[] = []
+        let legsScaled = false
+        let anchorDate = depDate
+        let anchorTime = depTime
+
+        for (let li = 0; li < points.length - 1; li++) {
+            const a = points[li]
+            const b = points[li + 1]
+            const arrivalAtA = { date: anchorDate, time: anchorTime }
+            const route = legRouteOptions[li]?.[0] ?? null
+            const countries = route?.countries?.length
+                ? route.countries
+                : [{ country: fallbackCountry, km: route?.km ?? null, durationMin: route?.durationMin ?? 0 }]
+            const codes = countries.map(c => c.country)
+            const knownEnd = !!(b.date && b.time)
+
+            let legTimes: ReturnType<typeof chainForward> | null = null
+            if (knownEnd) {
+                const totalDurationMin = countries.reduce((s, c) => s + c.durationMin, 0)
+                const windowMin = arrivalAtA.time ? minutesBetween(arrivalAtA.date, arrivalAtA.time, b.date!, b.time!) : null
+                // Okno je tesnejšie než odhad OSM trasy - proporčne skráť trvania
+                // jednotlivých hraničných úsekov, nech odchod z `a` presne vyjde na
+                // arrivalAtA (namiesto toho, aby vyšiel pred príchodom). Ak treba
+                // skrátiť o viac než ROUTE_DURATION_TOLERANCE, len upozorni - stále
+                // to vygeneruj, nezastavuj celý výpočet.
+                let durations = countries.map(c => c.durationMin)
+                if (windowMin != null && totalDurationMin > 0 && windowMin < totalDurationMin) {
+                    durations = countries.map(c => c.durationMin * (Math.max(windowMin, 0) / totalDurationMin))
+                    legsScaled = true
+                    if (windowMin < totalDurationMin * (1 - ROUTE_DURATION_TOLERANCE)) {
+                        legWarnings.push(`Cesta z "${a.place}" (príchod ${fmtDate(arrivalAtA.date)} ${arrivalAtA.time}) do "${b.place}" (príchod ${fmtDate(b.date!)} ${b.time!}) je podľa OSM na ${totalDurationMin} min, no okno má len ${Math.max(windowMin, 0)} min - časy sme skrátili, over si to.`)
+                    }
+                }
+                // Odzadu: odchod z predchádzajúceho miesta = ručne zadaný príchod mínus trvanie trasy.
+                legTimes = chainBackward(b.date!, b.time!, durations)
+            } else if (anchorTime) {
+                legTimes = chainForward(anchorDate, anchorTime, countries.map(c => c.durationMin))
+            }
+
+            // Dni strávené v mieste `a` MEDZI príchodom doňho (arrivalAtA) a odchodom
+            // z neho (začiatok tohto úseku) - platí pre KAŽDÝ medziľahlý bod trasy,
+            // nie len pre posledný cieľ (predtým sa dni na medzizastávkach strácali).
+            if (li >= 1 && legTimes && arrivalAtA.time) {
+                const restCountry = codes[0]
+                for (const date of datesBetween(arrivalAtA.date, legTimes[0].date)) {
+                    outSegs.push(mkSeg({ date, from: a.place, fromTime: '00:00', to: a.place, toTime: '00:00', country: restCountry }))
+                }
+            }
+
+            countries.forEach((c, i) => {
+                const isLastInLeg = i === codes.length - 1
+                outSegs.push(mkSeg({
+                    date: legTimes ? legTimes[i].date : anchorDate,
+                    from: i === 0 ? a.place : hr(codes[i - 1], codes[i]),
+                    fromTime: legTimes ? legTimes[i].time : (i === 0 ? (anchorTime || '') : ''),
+                    to: isLastInLeg ? b.place : hr(codes[i], codes[i + 1]),
+                    // Uprednostni reálne dopočítaný čas príchodu pred sentinelom "00:00" -
+                    // ten je len záložná hodnota pre výpočet stravného, keď reálny čas nepoznáme.
+                    toTime: legTimes ? legTimes[i + 1].time : (isLastInLeg ? ((knownEnd ? b.time! : '') || arrToTime) : (knownEnd ? b.time! : '')),
+                    country: c.country, km: c.km,
+                }))
+            })
+
+            if (knownEnd) {
+                anchorDate = b.date!
+                anchorTime = b.time!
+            } else if (legTimes) {
+                anchorDate = legTimes[legTimes.length - 1].date
+                anchorTime = legTimes[legTimes.length - 1].time
+            }
+        }
+
+        setWaypointTimeErrors(prev => {
+            if (legWarnings.length === 0) {
+                if (!(ti in prev)) return prev
+                const next = { ...prev }
+                delete next[ti]
+                return next
+            }
+            return { ...prev, [ti]: legWarnings }
+        })
+
+        // Cesta späť - jeden skok POSLEDNÉHO bodu (destination, alebo posledný
+        // pridaný cieľ) -> returnLocation. Rovnaké okno-fit škálovanie ako pri
+        // ceste bez zastávok (scaleDurationsToFit), aby sa časy nezmestili
+        // mimo okna pred návratom bez varovania.
+        const finalRoutePoint = finalPoint.lat != null && finalPoint.lon != null
+            ? { lat: finalPoint.lat, lon: finalPoint.lon } : finalPoint.place.trim()
+        const retRouteOptions = retLoc.trim() ? await calcOsmRouteOptions(finalRoutePoint, retLoc.trim()) : null
+        const retRoute = retRouteOptions?.[0]
+        const retCountries = retRoute?.countries?.length
+            ? retRoute.countries
+            : [{ country: fallbackCountry, km: retRoute?.km ?? null, durationMin: retRoute?.durationMin ?? 0 }]
+        const retCodes = retCountries.map(c => c.country)
+        const retWindowMin = anchorTime && retTime ? minutesBetween(anchorDate, anchorTime, retDate, retTime) : null
+        const { durations: retDurations, scaled: retScaled } = scaleDurationsToFit(retCountries.map(c => c.durationMin), retWindowMin)
+        const retTimes = retTime ? chainBackward(retDate, retTime, retDurations) : null
+
+        const retSegs = retCountries.map((c, i) => {
+            const isLast = i === retCodes.length - 1
+            return mkSeg({
+                date: retTimes ? retTimes[i].date : retDate,
+                from: i === 0 ? finalPoint.place : hr(retCodes[i - 1], retCodes[i]),
+                fromTime: i === 0 ? ((retTimes ? retTimes[i].time : '') || arrToTime) : (retTimes ? retTimes[i].time : ''),
+                to: isLast ? retLoc : hr(retCodes[i], retCodes[i + 1]),
+                toTime: isLast ? retTime : (retTimes ? retTimes[i + 1].time : ''),
+                country: c.country, km: c.km,
+            })
+        })
+
+        // Dni na mieste POSLEDNÉHO cieľa - medzi príchodom doňho (anchorDate/anchorTime
+        // po hlavnej slučke) a odchodom naspäť. Značené skutočnou krajinou prvého
+        // úseku cesty späť (nie fallbackCountry/trip.country), nech to sedí, aj keď
+        // posledný pridaný cieľ leží v inej krajine než pôvodné "Cieľ cesty".
+        const departureFromDestDate = retTimes ? retTimes[0].date : retDate
+        const finalRestCountry = retCountries[0]?.country ?? fallbackCountry
+        const midDaySegs = anchorTime
+            ? datesBetween(anchorDate, departureFromDestDate).map(date =>
+                mkSeg({ date, from: finalPoint.place, fromTime: '00:00', to: finalPoint.place, toTime: '00:00', country: finalRestCountry }))
+            : []
+
+        const segs = [...outSegs, ...midDaySegs, ...retSegs]
+        const { segs: keptSegs, lost } = carryOverExpenses(trip.segments, segs)
+        // Mapa v náhľade má ukázať CELÚ trasu vrátane ďalších miest rokovania - spoj
+        // súradnice zo všetkých úsekov tam (depLoc -> dest -> waypoint1 -> ...) aj z
+        // cesty späť do jednej súvislej čiary, nie len prvý skok ako predtým.
+        // Ak OSM trasa pre niektorý úsek zlyhá (napr. dočasný výpadok/limit verejnej
+        // služby), radšej rovná čiara medzi známymi bodmi než aby kvôli jednému
+        // úseku zmizla mapa celá.
+        const legCoords = legRouteOptions.flatMap((opts, idx) => {
+            const coords = opts?.[0]?.coordinates
+            if (coords?.length) return coords
+            const a = points[idx], b = points[idx + 1]
+            return a.lat != null && a.lon != null && b.lat != null && b.lon != null
+                ? [{ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon }]
+                : []
+        })
+        const routeCoordinates = [...legCoords, ...(retRoute?.coordinates ?? [])]
+        // Číslované ciele (destination + zastávky, points[1..]) - súradnica každého
+        // je koniec trasy úseku, ktorý doň prichádza (presnejšie než point.lat/lon,
+        // ktoré pri ručne zadanom mieste bez OSM návrhu môže chýbať).
+        const routeStops = points.slice(1).map((p, idx) => {
+            const coords = legRouteOptions[idx]?.[0]?.coordinates
+            const last = coords?.[coords.length - 1]
+            const coord = last ?? (p.lat != null && p.lon != null ? { lat: p.lat, lon: p.lon } : null)
+            return coord ? { lat: coord.lat, lon: coord.lon, label: String(idx + 1) } : null
+        }).filter((s): s is { lat: number; lon: number; label: string } => s != null)
+        const trips = [...(form.trips ?? [])]
+        trips[ti] = {
+            ...trip,
+            routeCoordinates: routeCoordinates.length > 0 ? routeCoordinates : null,
+            routeStops: routeStops.length > 0 ? routeStops : null,
+            segments: keptSegs.map(s => ({
+                ...s,
+                stravne: calcSegStravne(s.fromTime, s.toTime, s.country ?? 'SK', getRatesForDate(ratesHistory, s.date)),
+            })),
+        }
+        set('trips', trips)
+        setScaledTrips(prev => {
+            const scaled = legsScaled || retScaled
+            const has = prev.has(ti)
+            if (scaled === has) return prev
+            const next = new Set(prev)
+            if (scaled) next.add(ti); else next.delete(ti)
+            return next
+        })
+        setLostExpenses(prev => lost > 0 ? { ...prev, [ti]: lost } : (ti in prev ? Object.fromEntries(Object.entries(prev).filter(([k]) => k !== String(ti))) : prev))
     }
 
     const generateTripSegments = async (ti: number) => {
@@ -563,8 +1125,43 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
             return
         }
 
+        const hasWaypointStops = (trip.waypoints?.length ?? 0) > 0
+        setWaypointTimeErrors(prev => {
+            if (!(ti in prev)) return prev
+            const next = { ...prev }
+            delete next[ti]
+            return next
+        })
+
+        if (hasWaypointStops) {
+            const depDate = trip.departureDate
+            const depTime = trip.departureTime ?? ''
+            const retDate = trip.returnDate ?? depDate
+            const retTime = trip.returnTime ?? ''
+            // Overiť len keď poznáme celý interval odchod-návrat - bez toho sa
+            // nedá spoľahlivo zistiť, či je zadaný príchod mimo neho.
+            if (depTime && retTime) {
+                const errors = (trip.waypoints ?? [])
+                    .map((wp, wi) => {
+                        const afterDeparture = minutesBetween(depDate, depTime, wp.arrivalDate, wp.arrivalTime) >= 0
+                        const beforeReturn = minutesBetween(wp.arrivalDate, wp.arrivalTime, retDate, retTime) >= 0
+                        if (afterDeparture && beforeReturn) return null
+                        return `${wi + 2}. cieľ (${wp.place}) - príchod ${fmtDate(wp.arrivalDate)} ${wp.arrivalTime} je mimo intervalu odchod (${fmtDate(depDate)} ${depTime}) - návrat (${fmtDate(retDate)} ${retTime}).`
+                    })
+                    .filter((e): e is string => e !== null)
+                if (errors.length > 0) {
+                    setWaypointTimeErrors(prev => ({ ...prev, [ti]: errors }))
+                    return
+                }
+            }
+        }
+
         setLoadingGenTi(ti)
         try {
+            if (hasWaypointStops) {
+                await buildWaypointSegments(ti)
+                return
+            }
             // Zisti skutočné tranzitné krajiny + alternatívne trasy cez OSM
             // (ak máme uložené presné súradnice cieľa z OSM návrhu, použi ich namiesto opätovného geokódovania)
             const destPoint = trip.destinationLat != null && trip.destinationLon != null
@@ -664,9 +1261,11 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         setTimeout(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 0)
     }
 
+    const hasSegmentOverlaps = (form.trips ?? []).some(t => findSegmentOverlaps(t.segments).length > 0)
+
     const canNext = (() => {
         if (activeStep === 0) return form.employee.trim().length > 0
-        if (activeStep === 1) return (form.trips?.length ?? 0) > 0 && (form.trips?.[0]?.destination?.trim().length ?? 0) > 0
+        if (activeStep === 1) return (form.trips?.length ?? 0) > 0 && (form.trips?.[0]?.destination?.trim().length ?? 0) > 0 && !hasSegmentOverlaps
         return true
     })()
 
@@ -703,8 +1302,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                 if (val.defaultFuelConsumption != null) {
                                     set('fuelConsumption', val.defaultFuelConsumption)
                                     set('transportType', 'car')
-                                    set('isElectric', val.defaultIsElectric ?? null)
-                                    set('fuelType', val.defaultIsElectric ? 'electric' : null)
+                                    const defaultFuelType = val.defaultFuelType ?? (val.defaultIsElectric ? 'electric' : null)
+                                    set('isElectric', defaultFuelType === 'electric' ? true : null)
+                                    set('fuelType', defaultFuelType)
                                 } else {
                                     set('transportType', 'company_car')
                                     set('isElectric', null)
@@ -769,6 +1369,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         <>
             {(form.trips ?? []).map((trip, ti) => {
                 const tripOsmSuggestions = osmDestSuggestions[ti] ?? []
+                const segmentOverlaps = findSegmentOverlaps(trip.segments)
                 const daily = calcDailyStravne(trip.segments, ratesHistory)
                 const foreignDaily = daily.filter(ds => ds.country !== 'SK')
                 const firstForeignCur = foreignDaily[0]?.currency ?? 'EUR'
@@ -802,6 +1403,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                     ? `${n.toFixed(2)} €` : `${n.toFixed(2)} ${vreckoveLimitCur}`
                 const depLabel = trip.departureLocation || 'Odchod'
                 const destLabel = trip.destination || 'Cieľ'
+                const routeLabel = [depLabel, destLabel, ...(trip.waypoints ?? []).map(w => w.place || '?')].join(' → ')
 
                 const isCollapsed = collapsedTrips.has(ti)
                 const toggleCollapse = () => setCollapsedTrips(prev => {
@@ -821,7 +1423,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                             Trasa {(form.trips ?? []).length > 1 ? ti + 1 : ''}
                                         </Typography>
                                         <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: 0.3, lineHeight: 1.2, color: 'primary.contrastText' }}>
-                                            {depLabel} → {destLabel}
+                                            {routeLabel}
                                         </Typography>
                                         {trip.departureDate && (
                                             <Typography variant="caption" sx={{ opacity: 0.75, mt: 0.5, display: 'block', color: 'primary.contrastText' }}>
@@ -854,6 +1456,19 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
                             <Collapse in={!isCollapsed}>
                             <Stack sx={{ gap: 2 }}>
+
+                                {!restricted && segmentOverlaps.length > 0 && (
+                                    <Alert severity="error" sx={{ borderRadius: '10px' }}>
+                                        <Stack sx={{ gap: 0.25 }}>
+                                            {segmentOverlaps.map(({ date, a, b }, oi) => (
+                                                <Typography key={oi} variant="body2">
+                                                    Prekrývajúce sa časy {fmtDate(date)}: <strong>{a.fromPlace || '?'}–{a.toPlace || '?'}</strong> ({a.fromTime}–{a.toTime})
+                                                    {' '}a <strong>{b.fromPlace || '?'}–{b.toPlace || '?'}</strong> ({b.fromTime}–{b.toTime}) — nemôžete byť na dvoch miestach naraz.
+                                                </Typography>
+                                            ))}
+                                        </Stack>
+                                    </Alert>
+                                )}
 
                                 <Autocomplete
                                     freeSolo
@@ -898,6 +1513,103 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                             }} />
                                     )}
                                 />
+
+                                <Stack sx={{ gap: 1 }}>
+                                    {(trip.waypoints ?? []).map((wp, wi) => (
+                                        <Paper key={wi} variant="outlined"
+                                            sx={{ p: 1, borderRadius: '10px', display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                                            <Box sx={{
+                                                width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                bgcolor: 'primary.main', color: 'primary.contrastText', fontSize: 12, fontWeight: 700,
+                                            }}>
+                                                {wi + 2}
+                                            </Box>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>{wp.place}</Typography>
+                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                    Príchod {fmtDate(wp.arrivalDate)} o {wp.arrivalTime}
+                                                </Typography>
+                                            </Box>
+                                            <IconButton size="small" onClick={() => removeWaypoint(ti, wi)}>
+                                                <Delete fontSize="small" />
+                                            </IconButton>
+                                        </Paper>
+                                    ))}
+                                    {addingWaypointFor[ti] ? (() => {
+                                        const draft = newWaypointDraft[ti]
+                                        const wpOsmSuggestions = waypointOsmSuggestions[ti] ?? []
+                                        const prevPlace = (trip.waypoints ?? [])[(trip.waypoints ?? []).length - 1]?.place ?? trip.destination
+                                        return (
+                                        <Paper variant="outlined" sx={{ p: 1.25, borderRadius: '10px' }}>
+                                            <Stack sx={{ gap: 1 }}>
+                                                <Autocomplete
+                                                    freeSolo
+                                                    fullWidth
+                                                    size="small"
+                                                    options={[...new Set([
+                                                        ...prefs.customPlaces,
+                                                        ...(CITY_SUGGESTIONS[trip.country ?? 'SK'] ?? []),
+                                                        ...wpOsmSuggestions.map(s => s.label),
+                                                    ])]}
+                                                    inputValue={draft?.place ?? ''}
+                                                    onInputChange={(_e, val, reason) => {
+                                                        if (reason === 'reset') return
+                                                        updateWaypointDraft(ti, { place: val, lat: null, lon: null })
+                                                        searchWaypointPlace(ti, val)
+                                                    }}
+                                                    onChange={(_e, val) => {
+                                                        if (typeof val !== 'string') return
+                                                        const match = wpOsmSuggestions.find(s => s.label === val)
+                                                        if (match) {
+                                                            updateWaypointDraft(ti, {
+                                                                place: match.shortLabel,
+                                                                lat: match.lat, lon: match.lon,
+                                                            })
+                                                        } else {
+                                                            updateWaypointDraft(ti, { place: val, lat: null, lon: null })
+                                                        }
+                                                    }}
+                                                    filterOptions={(options, { inputValue }) => {
+                                                        const q = norm(inputValue)
+                                                        const osmLabels = wpOsmSuggestions.map(s => s.label)
+                                                        return options.filter(o =>
+                                                            o !== prevPlace &&
+                                                            (osmLabels.includes(o) || q === '' || norm(o).includes(q))
+                                                        )
+                                                    }}
+                                                    renderInput={params => <TextField {...params} label="Ďalší cieľ" />}
+                                                />
+                                                <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1 }}>
+                                                    <TextField label="Dátum príchodu" type="date" size="small" sx={{ minWidth: 155, flexShrink: 0 }}
+                                                        slotProps={{ inputLabel: { shrink: true } }}
+                                                        value={draft?.date ?? ''}
+                                                        onChange={e => updateWaypointDraft(ti, { date: e.target.value })} />
+                                                    <TimePickerField label="Čas príchodu" size="small"
+                                                        sx={{ width: { xs: '100%', sm: 130 }, flexShrink: 0 }}
+                                                        value={draft?.time ?? ''}
+                                                        onChange={v => updateWaypointDraft(ti, { time: v })} />
+                                                    <Stack direction="row" sx={{ gap: 1, flexShrink: 0, ml: { sm: 'auto' } }}>
+                                                        <Button size="small" variant="contained"
+                                                            disabled={!draft?.place?.trim() || !draft?.date || !draft?.time}
+                                                            onClick={() => { addWaypoint(ti); setAddingWaypointFor(prev => ({ ...prev, [ti]: false })) }}>
+                                                            Pridať
+                                                        </Button>
+                                                        <Button size="small" onClick={() => setAddingWaypointFor(prev => ({ ...prev, [ti]: false }))}>
+                                                            Zrušiť
+                                                        </Button>
+                                                    </Stack>
+                                                </Stack>
+                                            </Stack>
+                                        </Paper>
+                                        )
+                                    })() : (
+                                        <Button size="small" startIcon={<Add />} sx={{ alignSelf: 'flex-start' }}
+                                            onClick={() => setAddingWaypointFor(prev => ({ ...prev, [ti]: true }))}>
+                                            Pridať ďalší cieľ
+                                        </Button>
+                                    )}
+                                </Stack>
 
                                 <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5 }}>
                                     <Autocomplete
@@ -1006,6 +1718,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                         onChange={v => updateTrip(ti, 'returnTime', v)} />
                                 </Stack>
 
+                                <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                                    <TextField select label="Predvolený spôsob dopravy" sx={{ maxWidth: 260 }}
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={trip.defaultTransport ?? 'car'}
+                                        onChange={e => updateTrip(ti, 'defaultTransport', e.target.value)}>
+                                        {TRANSPORT_OPTIONS.map(o => (
+                                            <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                                        ))}
+                                    </TextField>
+                                    <Tooltip title="Použije sa pri generovaní úsekov tejto cesty. Jednotlivé úseky si vieš prepnúť aj samostatne.">
+                                        <InfoOutlined sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                    </Tooltip>
+                                </Stack>
+
                                 {trip.departureDate && trip.returnDate && trip.returnDate >= trip.departureDate && (() => {
                                     const days = Math.round((new Date(trip.returnDate).getTime() - new Date(trip.departureDate).getTime()) / 86_400_000) + 1
                                     return (
@@ -1019,9 +1745,18 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                         <Button variant="outlined" size="small" sx={{ borderRadius: '10px' }}
                                             disabled={loadingGenTi === ti}
                                             startIcon={loadingGenTi === ti ? <CircularProgress size={14} /> : undefined}
-                                            onClick={async () => {
-                                                if (trip.segments.length > 0 && !window.confirm('Prepočítať úseky? Existujúce úseky budú nahradené.')) return
-                                                await generateTripSegments(ti)
+                                            onClick={() => {
+                                                if (trip.segments.length > 0) {
+                                                    const hasExpenses = trip.segments.some(s => s.expenses?.length)
+                                                    setConfirmState({
+                                                        message: hasExpenses
+                                                            ? 'Prepočítať úseky? Existujúce úseky budú nahradené — zadané výdavky (lístky, nocľažné, ...) sa prenesú tam, kde sa dátum aj miesto zhodujú, inak sa stratia.'
+                                                            : 'Prepočítať úseky? Existujúce úseky budú nahradené.',
+                                                        onConfirm: () => { setConfirmState(null); generateTripSegments(ti) },
+                                                    })
+                                                    return
+                                                }
+                                                generateTripSegments(ti)
                                             }}>
                                             {loadingGenTi === ti ? 'Generujem…' : trip.segments.length === 0 ? 'Vygenerovať úseky (tam + pobyt + späť)' : 'Prepočítať úseky'}
                                         </Button>
@@ -1040,11 +1775,37 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                     </Stack>
                                 )}
 
+                                {!restricted && (waypointTimeErrors[ti]?.length ?? 0) > 0 && (
+                                    <Alert severity="warning" sx={{ borderRadius: '10px' }}>
+                                        <Stack sx={{ gap: 0.25 }}>
+                                            {waypointTimeErrors[ti]!.map((err, ei) => (
+                                                <Typography key={ei} variant="body2">{err}</Typography>
+                                            ))}
+                                        </Stack>
+                                    </Alert>
+                                )}
+
+                                {!restricted && scaledTrips.has(ti) && (
+                                    <Alert severity="warning" sx={{ borderRadius: '10px' }}>
+                                        Časy sme skrátili, aby sedeli do zadaného okna odchod–návrat.
+                                    </Alert>
+                                )}
+
+                                {!restricted && (lostExpenses[ti] ?? 0) > 0 && (
+                                    <Alert severity="warning" sx={{ borderRadius: '10px' }} onClose={() => setLostExpenses(prev => {
+                                        const next = { ...prev }
+                                        delete next[ti]
+                                        return next
+                                    })}>
+                                        {lostExpenses[ti]} {lostExpenses[ti] === 1 ? 'zadaný výdavok sa' : 'zadané výdavky sa'} nepodarilo priradiť k novým úsekom (zmenil sa dátum alebo miesto) — skontroluj lístky/nocľažné nižšie.
+                                    </Alert>
+                                )}
+
                                 {!restricted && (
                                     <SegmentEditor
                                         segments={trip.segments}
                                         tripDate={trip.departureDate}
-                                        transport={form.transportType ?? 'car'}
+                                        transport={trip.defaultTransport ?? 'car'}
                                         defaultCountry={trip.country ?? 'SK'}
                                         ratesHistory={ratesHistory}
                                         allCountries={allCountries}
@@ -1096,37 +1857,26 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     const renderStep2 = () => (
         <>
+            {autoCarKm != null && (
             <Card sx={sxCard}>
                 <CardContent>
                     <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
-                        Typ dopravy
+                        Vozidlo
                     </Typography>
                     <Stack sx={{ gap: 2.5, mt: 1.5 }}>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, alignItems: { sm: 'center' } }}>
-                            <TextField select label="Spôsob dopravy" fullWidth
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={form.transportType ?? 'car'}
-                                onChange={e => set('transportType', e.target.value)}>
-                                {TRANSPORT_OPTIONS.map(o => (
-                                    <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
-                                ))}
-                            </TextField>
-                            {autoCarKm != null && (
-                                <Chip size="small" label={`${autoCarKm} km`} variant="outlined" sx={{ flexShrink: 0 }} />
-                            )}
-                        </Stack>
-
-                        {form.transportType === 'car' && (
+                        <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center' }}>
                             <TextField label="EČV (evidenčné číslo vozidla)" sx={{ maxWidth: 220 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
                                 value={form.ecv ?? ''}
                                 onChange={e => set('ecv', e.target.value.toUpperCase())} />
-                        )}
+                            <Chip size="small" label={`${autoCarKm} km AUV`} variant="outlined" sx={{ flexShrink: 0 }} />
+                        </Stack>
                     </Stack>
                 </CardContent>
             </Card>
+            )}
 
-            {form.transportType === 'car' && (
+            {autoCarKm != null && (
                 <Card sx={sxCard}>
                     <CardContent>
                         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
@@ -1148,7 +1898,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
                             <TextField select label="Druh paliva" sx={{ maxWidth: 200 }}
                                 slotProps={{ inputLabel: { shrink: true } }}
-                                value={form.fuelType ?? (form.isElectric ? 'electric' : 'petrol')}
+                                value={form.fuelType ?? (form.isElectric ? 'electric' : 'diesel')}
                                 onChange={e => {
                                     const ft = e.target.value
                                     set('fuelType', ft)
@@ -1169,15 +1919,62 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                             slotProps={{ inputLabel: { shrink: true } }}
                                             value={form.fuelConsumption ?? ''}
                                             onChange={e => set('fuelConsumption', e.target.value ? Number(e.target.value) : undefined)} />
-                                        <TextField
-                                            label={`Cena (${fi.priceUnit})`}
-                                            type="number" fullWidth
-                                            slotProps={{ inputLabel: { shrink: true } }}
-                                            value={form.fuelPricePerLiter ?? ''}
-                                            onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)} />
+                                        <Tooltip title={onFetchFuelPrice
+                                            ? (fuelPriceFetch.weekLabel
+                                                ? `Automaticky načítané zo Štatistického úradu SR (${fuelPriceFetch.weekLabel}). Hodnotu môžeš ručne upraviť.`
+                                                : 'Cena sa automaticky načíta zo Štatistického úradu SR podľa druhu paliva a dátumu odchodu.')
+                                            : ''}>
+                                            <TextField
+                                                label={`Cena (${fi.priceUnit})`}
+                                                type="number" fullWidth
+                                                slotProps={{
+                                                    inputLabel: { shrink: true },
+                                                    formHelperText: { sx: { color: fuelPriceFetch.error ? 'error.main' : 'text.secondary' } },
+                                                }}
+                                                value={form.fuelPricePerLiter ?? ''}
+                                                onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)}
+                                                helperText={fuelPriceFetch.loading ? 'Načítavam cenu zo ŠÚ SR…' : (fuelPriceFetch.error ?? ' ')} />
+                                        </Tooltip>
                                     </Stack>
                                 )
                             })()}
+                        </Stack>
+                    </CardContent>
+                </Card>
+            )}
+
+            {ticketSegments.length > 0 && (
+                <Card sx={sxCard}>
+                    <CardContent>
+                        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
+                            Lístky / letenky
+                        </Typography>
+                        <Stack sx={{ gap: 1.5, mt: 1.5 }}>
+                            {ticketSegments.map(({ ti, si, seg }) => {
+                                const cestovne = seg.expenses?.find(e => e.type === 'cestovne')
+                                const defaultCur = allCountries.find(c => c.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
+                                return (
+                                    <Stack key={`${ti}-${si}`} direction={{ xs: 'column', sm: 'row' }}
+                                        sx={{ gap: 1, alignItems: { sm: 'center' } }}>
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                {TRANSPORT_OPTIONS.find(o => o.value === seg.transport)?.label ?? seg.transport}
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                {fmtDate(seg.date)} · {seg.fromPlace || '—'} → {seg.toPlace || '—'}
+                                            </Typography>
+                                        </Box>
+                                        <TextField type="number" size="small" label="Cena lístka" sx={{ width: 140 }}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={cestovne?.amount || ''}
+                                            onChange={e => updateSegExpense(ti, si, 'cestovne', Number(e.target.value), cestovne?.currency ?? defaultCur)} />
+                                        <TextField size="small" label="Mena" sx={{ width: 80 }}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={cestovne?.currency ?? defaultCur}
+                                            onChange={e => updateSegExpense(ti, si, 'cestovne', cestovne?.amount ?? 0, e.target.value.toUpperCase())} />
+                                    </Stack>
+                                )
+                            })}
                         </Stack>
                     </CardContent>
                 </Card>
@@ -1255,6 +2052,114 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 </CardContent>
             </Card>
 
+            {staySegments.length > 0 && (
+                <Card sx={sxCard}>
+                    <CardContent>
+                        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
+                            Nocľažné
+                        </Typography>
+                        <Stack sx={{ gap: 1.5, mt: 1.5 }}>
+                            {staySegments.map(({ ti, si, place, dateFrom, dateTo, count, nights }) => {
+                                const trip = (form.trips ?? [])[ti]
+                                if (!trip) return null
+                                const groupKey = `${ti}|${dateFrom}`
+                                const expanded = count > 1 && expandedNights.has(groupKey)
+
+                                const priceFields = (rowSi: number, fieldLabel: string) => {
+                                    const seg = trip.segments[rowSi]
+                                    if (!seg) return null
+                                    const noclazne = seg.expenses?.find(e => e.type === 'noclazne')
+                                    const defaultCur = allCountries.find(c => c.code === (seg.country ?? 'SK'))?.currency ?? 'EUR'
+                                    return (
+                                        <>
+                                            <TextField type="number" size="small" label={fieldLabel} sx={{ width: 140 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={noclazne?.amount || ''}
+                                                onChange={e => updateSegExpense(ti, rowSi, 'noclazne', Number(e.target.value), noclazne?.currency ?? defaultCur)} />
+                                            <TextField size="small" label="Mena" sx={{ width: 80 }}
+                                                slotProps={{ inputLabel: { shrink: true } }}
+                                                value={noclazne?.currency ?? defaultCur}
+                                                onChange={e => updateSegExpense(ti, rowSi, 'noclazne', noclazne?.amount ?? 0, e.target.value.toUpperCase())} />
+                                        </>
+                                    )
+                                }
+
+                                // Zlúčený riadok zobrazuje SÚČET nocí v skupine - ak boli ceny predtým
+                                // zadané osobitne (v úsekoch alebo v rozbalenom pohľade) a líšia sa,
+                                // vidno tu ich súčet, nie len jednu noc. Úprava zlúčeného poľa zapíše
+                                // celú sumu na poslednú noc a ostatné v skupine vynuluje, nech súčet
+                                // presne zodpovedá zadanej hodnote.
+                                const groupSum = nights.reduce((s, n) => {
+                                    const exp = trip.segments[n.si]?.expenses?.find(e => e.type === 'noclazne')
+                                    return s + (exp?.amount ?? 0)
+                                }, 0)
+                                const groupCur = nights.map(n => trip.segments[n.si]?.expenses?.find(e => e.type === 'noclazne')?.currency).find(Boolean)
+                                    ?? allCountries.find(c => c.code === (trip.segments[si]?.country ?? 'SK'))?.currency ?? 'EUR'
+                                const mergedFields = (
+                                    <>
+                                        <TextField type="number" size="small" label={count > 1 ? 'Cena spolu' : 'Cena nocľahu'} sx={{ width: 140 }}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={groupSum || ''}
+                                            onChange={e => {
+                                                const amount = Number(e.target.value)
+                                                nights.forEach(n => updateSegExpense(ti, n.si, 'noclazne', n.si === si ? amount : 0, groupCur))
+                                            }} />
+                                        <TextField size="small" label="Mena" sx={{ width: 80 }}
+                                            slotProps={{ inputLabel: { shrink: true } }}
+                                            value={groupCur}
+                                            onChange={e => {
+                                                const cur = e.target.value.toUpperCase()
+                                                nights.forEach(n => updateSegExpense(ti, n.si, 'noclazne', n.si === si ? groupSum : 0, cur))
+                                            }} />
+                                    </>
+                                )
+
+                                return (
+                                    <Box key={groupKey}>
+                                        <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1, alignItems: { sm: 'center' } }}>
+                                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                    {place}
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                    {count > 1
+                                                        ? `${count} ${count < 5 ? 'noci' : 'nocí'} · ${fmtDate(dateFrom)} – ${fmtDate(addDays(dateTo, 1))}`
+                                                        : `Noc z ${fmtDate(dateFrom)}`}
+                                                </Typography>
+                                            </Box>
+                                            {!expanded && mergedFields}
+                                            {count > 1 && (
+                                                <Button size="small" sx={{ flexShrink: 0 }}
+                                                    onClick={() => setExpandedNights(prev => {
+                                                        const next = new Set(prev)
+                                                        if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey)
+                                                        return next
+                                                    })}>
+                                                    {expanded ? 'Zlúčiť' : 'Zadať osobitne'}
+                                                </Button>
+                                            )}
+                                        </Stack>
+                                        {expanded && (
+                                            <Stack sx={{ gap: 1, mt: 1, pl: { sm: 3 } }}>
+                                                {nights.map(n => (
+                                                    <Stack key={n.date} direction={{ xs: 'column', sm: 'row' }}
+                                                        sx={{ gap: 1, alignItems: { sm: 'center' } }}>
+                                                        <Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: 'text.secondary' }}>
+                                                            Noc z {fmtDate(n.date)}
+                                                        </Typography>
+                                                        {priceFields(n.si, 'Cena nocľahu')}
+                                                    </Stack>
+                                                ))}
+                                            </Stack>
+                                        )}
+                                    </Box>
+                                )
+                            })}
+                        </Stack>
+                    </CardContent>
+                </Card>
+            )}
+
             <Card sx={sxCard}>
                 <CardContent>
                     <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 1.5 }}>
@@ -1309,10 +2214,20 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             Vyplň pre meny, ktoré chceš prepočítať na EUR
                         </Typography>
                         <Stack sx={{ gap: 1.5 }}>
-                            <TextField label="Dátum kurzu NBS" type="date" sx={{ maxWidth: 175 }}
-                                slotProps={{ inputLabel: { shrink: true } }}
-                                value={form.exchangeRateDate ?? ''}
-                                onChange={e => set('exchangeRateDate', e.target.value || null)} />
+                            <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Tooltip title={onFetchExchangeRates
+                                    ? 'Automaticky načítané z NBS (ku dňu pred odchodom). Hodnotu môžeš ručne upraviť.'
+                                    : ''}>
+                                    <TextField label="Dátum kurzu NBS" type="date" sx={{ maxWidth: 175 }}
+                                        slotProps={{ inputLabel: { shrink: true } }}
+                                        value={form.exchangeRateDate ?? ''}
+                                        onChange={e => set('exchangeRateDate', e.target.value || null)} />
+                                </Tooltip>
+                                {rateFetch.loading && <CircularProgress size={18} />}
+                            </Stack>
+                            {rateFetch.error && (
+                                <Typography variant="caption" color="error">{rateFetch.error}</Typography>
+                            )}
                             <Stack direction="row" sx={{ gap: 1.5, flexWrap: 'wrap' }}>
                                 {foreignCurrencies.map(currency => (
                                     <TextField key={currency} label={`1 EUR = ? ${currency}`}
@@ -1383,7 +2298,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
     const renderStep4 = () => {
         const firstTrip    = form.trips?.[0]
         const lastTrip     = form.trips?.[form.trips.length - 1]
-        const destinations = form.trips?.map(t => t.destination).filter(Boolean).join(' / ') || '—'
+        const destinations = form.trips
+            ?.map(t => [t.destination, ...(t.waypoints ?? []).map(w => w.place)].filter(Boolean).join(' → '))
+            .filter(Boolean).join(' / ') || '—'
 
         return (
             <>
@@ -1439,7 +2356,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 <SummaryCard icon={<DirectionsCar />} iconColor="#F59E0B" iconBg="rgba(245,158,11,0.12)"
                     label="Doprava" onEdit={() => goTo(2)}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {TRANSPORT_OPTIONS.find(o => o.value === form.transportType)?.label ?? '—'}
+                        {transportSummaryLabel(form.trips ?? [])}
                         {form.ecv ? ` · ${form.ecv}` : ''}
                     </Typography>
                     {effectiveCarKm != null && (
@@ -1691,11 +2608,22 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
 
     // ── Render ───────────────────────────────────────────────────────────────
 
+    const handleDialogClose = (_e: unknown, reason?: 'backdropClick' | 'escapeKeyDown') => {
+        if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+            setConfirmState({
+                message: 'Zavrieť bez uloženia? Neuložené zmeny sa stratia.',
+                onConfirm: () => { setConfirmState(null); onClose() },
+            })
+            return
+        }
+        onClose()
+    }
+
     return (
     <>
         <Dialog
             open
-            onClose={onClose}
+            onClose={handleDialogClose}
             fullScreen={isMobile}
             maxWidth={false}
             slotProps={{
@@ -1883,6 +2811,14 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                 </DialogActions>
             </Dialog>
         )}
+
+        <ConfirmDialog
+            open={!!confirmState}
+            message={confirmState?.message ?? ''}
+            danger
+            onConfirm={() => confirmState?.onConfirm()}
+            onCancel={() => setConfirmState(null)}
+        />
     </>
     )
 }

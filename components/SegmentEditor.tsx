@@ -144,7 +144,7 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
         onChange(s)
     }
 
-    const add = () => onChange([...segments, emptySegment(tripDate, transport, defaultCountry)])
+    const add = () => onChange([...segments, emptySegment(segments[segments.length - 1]?.date ?? tripDate, transport, defaultCountry)])
 
     const toggleExp = (i: number) => setExpandedExp(prev => {
         const s = new Set(prev)
@@ -283,14 +283,16 @@ const SegmentEditor = ({ segments, tripDate, transport, defaultCountry, ratesHis
                                 onChange={v => update(i, 'toTime', v)} />
                         </Stack>
 
-                        {/* Riadok 4: km + Krajina */}
+                        {/* Riadok 4: km (iba AUV) + Krajina */}
                         <Stack direction="row" sx={{ gap: 1 }}>
-                            <NumberField sx={{ flex: 1 }} label="km"
-                                value={seg.km}
-                                onChange={v => update(i, 'km', v)} />
+                            {seg.transport === 'car' && (
+                                <NumberField sx={{ flex: 1 }} label="km"
+                                    value={seg.km}
+                                    onChange={v => update(i, 'km', v)} />
+                            )}
                             <CountryAutocomplete
                                 size="medium"
-                                sx={{ width: 170 }}
+                                sx={seg.transport === 'car' ? { width: 170 } : { flex: 1 }}
                                 value={seg.country || defaultCountry}
                                 allCountries={allCountries}
                                 onChange={v => update(i, 'country', v)}

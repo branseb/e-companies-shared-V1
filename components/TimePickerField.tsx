@@ -15,7 +15,7 @@ const TimePickerField = ({ label, value, onChange, sx, size }: Props) => (
         type="time"
         size={size ?? 'medium'}
         sx={sx}
-        slotProps={{ inputLabel: { shrink: true } }}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { autoComplete: 'off' } }}
         value={value}
         onChange={e => onChange(e.target.value)}
     />
