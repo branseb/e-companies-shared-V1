@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { robotoBase64 } from '../assets/robotoFont'
 import { roboto700Base64 } from '../assets/robotoBoldFont'
-import { calcDailyStravne, getRatesForDate } from '../helpers'
+import { calcDailyStravne, getRatesForDate, convertToEurIfEnabled } from '../helpers'
 import { DEFAULT_STRAVNE_RATES, getFuelTypeInfo } from '../constants'
 import type { StravneRates, TripSegment, TripWaypoint } from '../types'
 
@@ -650,23 +650,19 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 // Skryť '00:00' ak druhý čas nie je zadaný (napr. '' a '00:00' → oba prázdne)
                 const dispTime = (t: string, other: string) => !t || (t === '00:00' && !other) ? '' : t
 
-                const hasValidRate = (cur: string) => !!(d.exchangeRates?.[cur] && (d.exchangeRates[cur] ?? 0) > 0)
-                // Mena bez záznamu v exchangeRateCategories = prepočítať všetko (spätná
-                // kompatibilita); ak záznam existuje, prepočíta sa len vybraná kategória
-                // (napr. CZK len pri stravnom, nocľažné v CZK ostane v pôvodnej mene).
-                const shouldConvert = (cur: string, category: string) =>
-                    d.exchangeRateCategories?.[cur]?.includes(category) ?? true
-                // Prepočíta sumu na EUR (ak je k dispozícii kurz a kategória je na to
-                // zapnutá) a rovno k nej pripojí "*" - hviezdička ide priamo k sume v jej
-                // VLASTNOM stĺpci (Stravné/Cestovné/...), nie až pri súčte "Spolu", nech je
-                // jasné KTORÁ konkrétna suma bola prepočítaná.
-                const amountEur = (amount: number, cur: string, category: string): { eur: number; text: string } => {
-                    if (cur === 'EUR') return { eur: amount, text: fmtSk(amount) }
-                    if (hasValidRate(cur) && shouldConvert(cur, category)) {
-                        hasStars = true
-                        return { eur: amount / d.exchangeRates![cur]!, text: `${fmtSk(amount / d.exchangeRates![cur]!)} *` }
+                // Prepočíta sumu na EUR (ak je k dispozícii kurz a kategória je preň
+                // zapnutá - convertToEurIfEnabled je jeden zdroj pravdy, rovnaký ako v
+                // sumároch vo formulári aj v hlavnom zozname CP) a pripojí "*" priamo k
+                // sume v jej VLASTNOM stĺpci (Stravné/Cestovné/...), nie až pri súčte
+                // "Spolu", nech je jasné KTORÁ konkrétna suma bola prepočítaná.
+                const amountEur = (amount: number, cur: string, category: string): { eur: number; text: string; currency: string } => {
+                    const conv = convertToEurIfEnabled(amount, cur, category, d.exchangeRates, d.exchangeRateCategories)
+                    if (conv.converted) hasStars = true
+                    return {
+                        eur: conv.amount,
+                        currency: conv.currency,
+                        text: conv.converted ? `${fmtSk(conv.amount)} *` : `${fmtSk(conv.amount)}${conv.currency !== 'EUR' ? ` ${conv.currency}` : ''}`,
                     }
-                    return { eur: amount, text: `${fmtSk(amount)} ${cur}` }
                 }
 
                 const stravneConv = ds ? amountEur(ds.stravne, ds.currency, 'stravne') : null
@@ -693,8 +689,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
                 const spoloCelkom = (stravneConv?.eur ?? 0) + segExpTotalEur
                 // Ak sa stravné v cudzej mene nekonvertovalo (chýba kurz alebo je kategória
                 // "stravné" pre túto menu vypnutá), ukážeme menu namiesto EUR
-                const spoloCelkomCur = ds && ds.currency !== 'EUR' && !(hasValidRate(ds.currency) && shouldConvert(ds.currency, 'stravne'))
-                    ? ds.currency : undefined
+                const spoloCelkomCur = stravneConv && stravneConv.currency !== 'EUR' ? stravneConv.currency : undefined
                 const spoluStr = spoloCelkom > 0
                     ? fmtSk(spoloCelkom) + (spoloCelkomCur ? ` ${spoloCelkomCur}` : '')
                     : stravneStr

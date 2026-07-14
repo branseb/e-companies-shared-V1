@@ -165,6 +165,29 @@ export const calcFuelCost = (km: number, consumption: number, pricePerLiter: num
 export const calcAmortization = (km: number, transportType: string | null | undefined, amortizationRate?: number): number =>
     transportType === 'car' ? km * (amortizationRate ?? AMORTIZATION_RATE) : 0
 
+// Prepočíta sumu na EUR, ak je pre danú menu k dispozícii kurz A kategória
+// (stravné/cestovné/nocľažné/nutné/ine) je pre túto menu na prepočet zapnutá.
+// Mena bez záznamu v exchangeRateCategories = prepočítať všetko (spätná
+// kompatibilita s CP vytvorenými pred touto voľbou). Používa sa všade, kde sa
+// súčty zobrazujú v EUR - PDF, sumáre vo formulári aj hlavný zoznam CP - nech
+// je to na jednom mieste a nie duplikované 3x s rizikom rozídenia sa.
+export const convertToEurIfEnabled = (
+    amount: number, currency: string, category: string,
+    exchangeRates: Record<string, number> | null | undefined,
+    exchangeRateCategories: Record<string, string[]> | null | undefined,
+): { amount: number; currency: string; converted: boolean } => {
+    if (currency === 'EUR') return { amount, currency: 'EUR', converted: false }
+    const rate = exchangeRates?.[currency]
+    if (!rate || rate <= 0) return { amount, currency, converted: false }
+    const shouldConvert = exchangeRateCategories?.[currency]?.includes(category) ?? true
+    if (!shouldConvert) return { amount, currency, converted: false }
+    return { amount: amount / rate, currency: 'EUR', converted: true }
+}
+
+// 'vreckove' sa všade inde (PDF, tabuľky) zobrazuje zlúčené do "Iné", takže
+// zdieľa aj jeho kategóriu prepočtu.
+const expenseCategory = (etype: string): string => etype === 'vreckove' ? 'ine' : etype
+
 export const computeOrderFinancials = (order: TravelOrder, ratesHistory: StravneRates) => {
     const carKm = (order.trips ?? []).flatMap(t => t.segments).filter(s => s.transport === 'car').reduce((s, seg) => s + (seg.km ?? 0), 0)
     const rowCarKm = carKm > 0 ? carKm : (order.distanceKm ?? 0)
@@ -175,8 +198,10 @@ export const computeOrderFinancials = (order: TravelOrder, ratesHistory: Stravne
 
     const stravneMap: Record<string, number> = {}
     for (const t of order.trips ?? [])
-        for (const ds of calcDailyStravne(t.segments, ratesHistory))
-            stravneMap[ds.currency] = (stravneMap[ds.currency] ?? 0) + ds.stravne
+        for (const ds of calcDailyStravne(t.segments, ratesHistory)) {
+            const conv = convertToEurIfEnabled(ds.stravne, ds.currency, 'stravne', order.exchangeRates, order.exchangeRateCategories)
+            stravneMap[conv.currency] = (stravneMap[conv.currency] ?? 0) + conv.amount
+        }
 
     const hasSegs = Object.keys(stravneMap).length > 0
     const totalsMap: Record<string, number> = { ...stravneMap }
@@ -188,7 +213,8 @@ export const computeOrderFinancials = (order: TravelOrder, ratesHistory: Stravne
         for (const seg of t.segments)
             for (const exp of seg.expenses ?? []) {
                 const c = exp.currency || 'EUR'
-                totalsMap[c] = (totalsMap[c] ?? 0) + (exp.amount ?? 0)
+                const conv = convertToEurIfEnabled(exp.amount ?? 0, c, expenseCategory(exp.type || 'ine'), order.exchangeRates, order.exchangeRateCategories)
+                totalsMap[conv.currency] = (totalsMap[conv.currency] ?? 0) + conv.amount
             }
 
     return { rowCarKm, fuelCost, amort, stravneMap, totalsMap, hasSegs }

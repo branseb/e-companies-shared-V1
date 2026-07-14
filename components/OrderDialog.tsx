@@ -12,7 +12,7 @@ import {
     calcFuelCost, calcAmortization, calcDailyStravne,
     getRatesForDate, getAllCountries,
     emptyTrip, fmtDate, calcSegStravne, chainForward, chainBackward, minutesBetween,
-    findSegmentOverlaps, sameDayWindowMinutes, scaleDurationsToFit,
+    findSegmentOverlaps, sameDayWindowMinutes, scaleDurationsToFit, convertToEurIfEnabled,
 } from '../helpers'
 import { FUEL_TYPE_OPTIONS, getFuelTypeInfo } from '../constants'
 import { calcOsmRouteOptions, searchOsmPlaces, type OsmRouteOption, type OsmCountryLeg, type OsmPlaceSuggestion } from '../utils/osmDistance'
@@ -218,8 +218,10 @@ const PreviewPanel = ({ form, fuelCost, amortization, totalsByCurrency, advanceB
                 const km     = trip.segments.reduce((sum, s) => sum + (s.km ?? 0), 0)
                 const daily  = calcDailyStravne(trip.segments, ratesHistory)
                 const stravneByCur: Record<string, number> = {}
-                for (const ds of daily)
-                    stravneByCur[ds.currency] = +((stravneByCur[ds.currency] ?? 0) + ds.stravne * mult).toFixed(2)
+                for (const ds of daily) {
+                    const conv = convertToEurIfEnabled(ds.stravne * mult, ds.currency, 'stravne', form.exchangeRates, form.exchangeRateCategories)
+                    stravneByCur[conv.currency] = +((stravneByCur[conv.currency] ?? 0) + conv.amount).toFixed(2)
+                }
                 const d0 = trip.departureDate ? new Date(trip.departureDate) : null
                 const d1 = trip.returnDate    ? new Date(trip.returnDate)    : null
                 const days = d0 && d1 ? Math.round((d1.getTime() - d0.getTime()) / 86_400_000) + 1 : null
@@ -506,14 +508,18 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
              + (form.freeVecera  ? entry.meals.vecera  : 0)
     }, [form.trips, form.freeRanajky, form.freeObed, form.freeVecera, ratesHistory])
 
+    // Ak je pre menu zapnutý prepočet danej kategórie (rovnaký prepínač ako v PDF),
+    // sumáre nižšie ukazujú už prepočítanú EUR hodnotu, nie pôvodnú cudziu menu.
     const netStravneByCurrency = useMemo(() => {
         const result: Record<string, number> = {}
         for (const [c, amt] of Object.entries(segStravneByCurrency)) {
             const net = +(amt * (1 - mealDeductionPct)).toFixed(2)
-            if (net > 0) result[c] = net
+            if (net <= 0) continue
+            const conv = convertToEurIfEnabled(net, c, 'stravne', form.exchangeRates, form.exchangeRateCategories)
+            result[conv.currency] = +((result[conv.currency] ?? 0) + conv.amount).toFixed(2)
         }
         return result
-    }, [segStravneByCurrency, mealDeductionPct])
+    }, [segStravneByCurrency, mealDeductionPct, form.exchangeRates, form.exchangeRateCategories])
 
     const totalsByCurrency = useMemo(() => {
         const map: Record<string, number> = {}
@@ -525,19 +531,28 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         for (const seg of (form.trips ?? []).flatMap(t => t.segments))
             for (const exp of seg.expenses ?? []) {
                 const c = exp.currency || 'EUR'
-                map[c] = (map[c] ?? 0) + (exp.amount ?? 0)
+                const category = exp.type === 'vreckove' ? 'ine' : (exp.type || 'ine')
+                const conv = convertToEurIfEnabled(exp.amount ?? 0, c, category, form.exchangeRates, form.exchangeRateCategories)
+                map[conv.currency] = (map[conv.currency] ?? 0) + conv.amount
             }
         return Object.fromEntries(Object.entries(map).filter(([, v]) => v > 0))
-    }, [netStravneByCurrency, form.stravneAmount, fuelCost, amortization, form.actualExpenses, form.trips])
+    }, [netStravneByCurrency, form.stravneAmount, fuelCost, amortization, form.actualExpenses, form.trips, form.exchangeRates, form.exchangeRateCategories])
 
+    // Zálohy nie sú viazané na kategóriu (nie sú "stravné" ani výdavok úseku) -
+    // prepočítajú sa vždy, keď je pre ich menu zadaný kurz (exchangeRateCategories
+    // sa tu zámerne neposiela), nech "Doplatok/Preplatok" porovnáva sumy v tej istej mene.
     const advanceByCurrency = useMemo(() => {
         const map: Record<string, number> = {}
+        const add = (amount: number, cur: string) => {
+            const conv = convertToEurIfEnabled(amount, cur, 'advance', form.exchangeRates, null)
+            map[conv.currency] = (map[conv.currency] ?? 0) + conv.amount
+        }
         if (form.advances?.length)
-            for (const adv of form.advances) { const c = adv.currency || 'EUR'; map[c] = (map[c] ?? 0) + adv.amount }
+            for (const adv of form.advances) add(adv.amount, adv.currency || 'EUR')
         else if (form.advanceAmount)
-            map['EUR'] = form.advanceAmount
+            add(form.advanceAmount, 'EUR')
         return map
-    }, [form.advances, form.advanceAmount])
+    }, [form.advances, form.advanceAmount, form.exchangeRates])
 
     const balanceByCurrency = useMemo(() => {
         const allCurs = new Set([...Object.keys(totalsByCurrency), ...Object.keys(advanceByCurrency)])
