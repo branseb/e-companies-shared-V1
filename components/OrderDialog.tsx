@@ -411,6 +411,25 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         return [...new Set([...dailyCurs, ...expenseCurs])].filter(c => c !== 'EUR')
     }, [form.trips, ratesHistory])
 
+    // Ktoré kategórie (stravné/cestovné/...) sa pre danú menu v CP reálne
+    // vyskytujú - detailný výber v karte "Výmenné kurzy" ponúka len tie, nech
+    // tam nevisia prepínače pre kategórie, ktoré v tej mene vôbec nemáš.
+    const categoriesByCurrency = useMemo(() => {
+        const map: Record<string, Set<string>> = {}
+        const add = (cur: string, cat: string) => {
+            if (cur === 'EUR') return
+            if (!map[cur]) map[cur] = new Set()
+            map[cur].add(cat)
+        }
+        for (const t of form.trips ?? []) {
+            for (const ds of calcDailyStravne(t.segments, ratesHistory)) add(ds.currency, 'stravne')
+            for (const seg of t.segments)
+                for (const exp of seg.expenses ?? [])
+                    add(exp.currency || 'EUR', exp.type === 'vreckove' ? 'ine' : (exp.type || 'ine'))
+        }
+        return map
+    }, [form.trips, ratesHistory])
+
     const earliestDeparture = useMemo(() => {
         const departures = (form.trips ?? []).map(t => t.departureDate).filter(Boolean) as string[]
         return departures.sort()[0] ?? form.departureDate
@@ -2248,6 +2267,9 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                             {foreignCurrencies.map(currency => {
                                 // Bez záznamu pre menu = prepočítať všetko (spätná kompatibilita).
                                 const allCats = EXCHANGE_RATE_CATEGORIES.map(c => c.value)
+                                // V detaile ponúkni len kategórie, ktoré v tejto mene reálne existujú
+                                // (napr. len "Stravné", ak máš CZK iba pri stravnom).
+                                const availableCats = EXCHANGE_RATE_CATEGORIES.filter(cat => categoriesByCurrency[currency]?.has(cat.value))
                                 const selected = form.exchangeRateCategories?.[currency] ?? allCats
                                 const allSelected = selected.length === allCats.length
                                 const toggleCategory = (cat: string) => {
@@ -2289,7 +2311,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                                     Prepočítať na EUR:
                                                 </Typography>
-                                                {EXCHANGE_RATE_CATEGORIES.map(cat => (
+                                                {availableCats.map(cat => (
                                                     <Chip key={cat.value} size="small" label={cat.label}
                                                         color={selected.includes(cat.value) ? 'primary' : 'default'}
                                                         variant={selected.includes(cat.value) ? 'filled' : 'outlined'}
