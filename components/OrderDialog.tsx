@@ -493,7 +493,7 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
         onFetchFuelPrice(fuelType, refDate).then(result => {
             if (cancelled) return
             if (!result) {
-                setFuelPriceFetch({ loading: false, error: 'Cena PHM sa nenašla, zadaj ju ručne.' })
+                setFuelPriceFetch({ loading: false, error: 'Štatistický úrad SR ešte nezverejnil cenu za tento týždeň, zadaj ju ručne.' })
                 return
             }
             set('fuelPricePerLiter', result.price)
@@ -1969,7 +1969,11 @@ const OrderDialog = ({ initial, isNew, orderId, ratesHistory, employees, prefere
                                                 }}
                                                 value={form.fuelPricePerLiter ?? ''}
                                                 onChange={e => set('fuelPricePerLiter', e.target.value ? Number(e.target.value) : undefined)}
-                                                helperText={fuelPriceFetch.loading ? 'Načítavam cenu zo ŠÚ SR…' : (fuelPriceFetch.error ?? ' ')} />
+                                                helperText={fuelPriceFetch.loading
+                                                    ? 'Načítavam cenu zo ŠÚ SR…'
+                                                    : (fuelPriceFetch.error ?? (fuelPriceFetch.weekLabel
+                                                        ? `Údaj je zo Štatistického úradu SR (${fuelPriceFetch.weekLabel}).`
+                                                        : ' '))} />
                                         </Tooltip>
                                     </Stack>
                                 )
