@@ -58,11 +58,24 @@ const ORSF_BASE = 'https://api.orsf.sk/v1'
 
 // Overené živým volaním api.orsf.sk/v1/companies/{ico} (bezplatné, bez API kľúča, agreguje ORSR/RPO/RÚZ).
 // previousNames/previousAddresses obsahujú validFrom/validTo pre každú historickú zmenu.
+//
+// Celý firemný záznam (so všetkými historickými menami/adresami) sa cachuje podľa IČO na 24h -
+// resolveSnapshot sa pre tú istú faktúru bežne volá dvakrát (hneď po parsovaní aj znova pri
+// uložení) a pri viacerých faktúrach od toho istého dodávateľa v jednej session by sa inak
+// zbytočne opakovane pýtalo cez sieť na tie isté, dávno nemenné údaje. Neúspešné volania sa
+// zámerne necachujú, nech dočasný výpadok siete nezablokuje ďalší pokus.
+const orsfCache = new Map<string, { company: OrsfCompany; fetchedAt: number }>()
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
 export const fetchOrsfCompany = async (ico: string): Promise<OrsfCompany | null> => {
+    const cached = orsfCache.get(ico)
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.company
     try {
         const res = await fetch(`${ORSF_BASE}/companies/${ico}`)
         if (!res.ok) return null
-        return await res.json()
+        const company = await res.json()
+        orsfCache.set(ico, { company, fetchedAt: Date.now() })
+        return company
     } catch {
         return null
     }
@@ -117,8 +130,11 @@ export const resolvePartnerSnapshot = async (
     extracted: ExtractedPartner,
     issueDate: string,
 ): Promise<PartnerSnapshot | null> => {
+    // Kontrolný súčet IČO sa overuje aj na tejto "rýchlej" ceste - inak by OCR chyba v jedinej
+    // číslici IČO (pri inak kompletne vyzerajúcom mene/adrese) prešla bez akejkoľvek kontroly
+    // a snímka by sa uložila so source:'invoice', akoby bola dôveryhodná.
     const isComplete = !!(extracted.name && extracted.ico && extracted.street
-        && extracted.postalCode && extracted.city)
+        && extracted.postalCode && extracted.city && isValidIco(extracted.ico).valid)
     if (isComplete) {
         return {
             name: extracted.name!,
