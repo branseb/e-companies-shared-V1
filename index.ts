@@ -1,7 +1,7 @@
 export { TravelOrdersWidget, TravelOrderDetailPanel } from './components'
 export { DEFAULT_STRAVNE_RATES, TAX_RATES, FUEL_TYPE_OPTIONS, getFuelTypeInfo } from './constants'
-export { getRatesForDate, getAllCountries, resolveRates, RATES_ALGORITHM_VERSION, fetchExchangeRates, fetchFuelPrice } from './helpers'
-export type { ExchangeRateLookup, FuelPriceLookup } from './helpers'
+export { getRatesForDate, getAllCountries, resolveRates, RATES_ALGORITHM_VERSION, fetchExchangeRates, fetchFuelPrice, resolvePartnerSnapshot, fetchOrsfCompany } from './helpers'
+export type { ExchangeRateLookup, FuelPriceLookup, PartnerSnapshot, ExtractedPartner } from './helpers'
 export type {
     TravelOrder, TravelOrderInput, TravelOrdersWidgetProps, EmployeeFormData,
     TravelOrderDetailPanelProps, TravelOrderAttachment,
