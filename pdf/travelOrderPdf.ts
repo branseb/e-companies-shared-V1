@@ -190,11 +190,11 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     const midX = adm ? L + 62 : L + 95
     label(doc, 'Priezvisko, meno, titul', L + 2, y + 1)
     boldVal(doc, d.employee, L + 2, y + 5.5)
-    vLine(doc, midX, y, y + 9)
+    vLine(doc, midX, y - 2, y + 9)
     label(doc, 'Bydlisko', midX + 2, y + 1)
     boldVal(doc, d.employeeAddress ?? '', midX + 2, y + 5.5)
     if (adm) {
-        vLine(doc, 135, y, y + 9)
+        vLine(doc, 135, y - 2, y + 9)
         label(doc, 'Telefón, klapka', 137, y + 1)
     }
     y += 9
@@ -208,13 +208,13 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     bold(doc, 7)
     doc.text('Začiatok cesty', c1 + 2, headerY + 3)
     label(doc, '(miesto, dátum, hod.)', c1 + 2, headerY + 6)
-    vLine(doc, c2, headerY, headerY + 8)
+    vLine(doc, c2, headerY - 1, headerY + 8)
     bold(doc, 7)
     doc.text('Miesto rokovania', c2 + 2, headerY + 4)
-    vLine(doc, c3, headerY, headerY + 8)
+    vLine(doc, c3, headerY - 1, headerY + 8)
     bold(doc, 7)
     doc.text('Účel cesty', c3 + 2, headerY + 4)
-    vLine(doc, c4, headerY, headerY + 8)
+    vLine(doc, c4, headerY - 1, headerY + 8)
     bold(doc, 7)
     doc.text('Koniec cesty', c4 + 2, headerY + 3)
     label(doc, '(miesto, dátum)', c4 + 2, headerY + 6)
@@ -296,7 +296,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
         hLine(doc, y)
 
         y += 1
-        vLine(doc, 100, y, y + 12)
+        vLine(doc, 100, y - 1, y + 12)
         label(doc, 'Podpis pokladníka', L + 2, y + 3)
         hLine(doc, y + 10, L + 2, 98)
         label(doc, 'Dátum a podpis štatutárneho zástupcu', 102, y + 3)
@@ -315,7 +315,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
         hLine(doc, y + 5, L + 80, 170)
         label(doc, 'So spôsobom vykonania súhlasí', L + 2, y + 8)
         hLine(doc, y + 12, L + 55, 170)
-        vLine(doc, 170, y, y + 14)
+        vLine(doc, 170, y - 1, y + 14)
         label(doc, 'Dátum a podpis', 172, y + 3)
         label(doc, 'štatutárneho zástupcu', 172, y + 6.5)
         hLine(doc, y + 13, 172, R - 2)
@@ -325,7 +325,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
         if (d.showAccountingCodes !== false) {
             y += 1
             label(doc, 'Výdavkový - príjmový pokladničný doklad', L + 2, y + 2.5)
-            vLine(doc, 100, y, y + 8)
+            vLine(doc, 100, y - 1, y + 8)
             bold(doc, 7.5); doc.text('Účtovací predpis', 130, y + 4)
             y += 8
             hLine(doc, y)
@@ -593,7 +593,7 @@ const drawPage2 = (doc: jsPDF, d: TravelOrderPdfInput, f: Financials, startY?: n
         doc.text('km',    cols.km      + 1, y - 1)
         doc.text('hod.',  cols.hod     + 1, y - 1)
         doc.text('od-do', cols.pracHod + 1, y - 1)
-        drawColLines(h1 - 2, y)
+        drawColLines(h1 - 3, y)
     }
 
     const addContinuationPage = () => {
