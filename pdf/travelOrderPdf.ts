@@ -123,6 +123,10 @@ const setupFonts = (doc: jsPDF) => {
     doc.addFileToVFS('Roboto-Bold.ttf', roboto700Base64)
     doc.addFont('Roboto-Bold.ttf', 'Roboto', '700')
     doc.setFont('Roboto', 'normal')
+    // Štvorcové zakončenie čiar - jednotlivo kreslené vodorovné a zvislé čiary
+    // sa v tabuľkách stretávajú v T-križovatkách; s predvoleným 'butt' zakončením
+    // tam pri tenkých čiarach (0.2mm) vzniká viditeľná medzera.
+    doc.setLineCap('square')
 }
 
 const normal  = (doc: jsPDF, size = 8)  => { doc.setFont('Roboto', 'normal'); doc.setFontSize(size) }
@@ -220,7 +224,7 @@ const drawPage1 = (doc: jsPDF, d: TravelOrderPdfInput) => {
     if (d.trips && d.trips.length > 0) {
         for (const trip of d.trips) {
             const depStr = [trip.departureLocation, fmtD(trip.departureDate), trip.departureTime].filter(Boolean).join(' ')
-            const retStr = [trip.returnLocation || trip.departureLocation, fmtD(trip.returnDate), trip.returnTime].filter(Boolean).join(' ')
+            const retStr = [trip.returnLocation || trip.departureLocation, fmtD(trip.returnDate)].filter(Boolean).join(' ')
             const destText = [trip.destination, ...(trip.waypoints ?? []).map(w => w.place)].filter(Boolean).join(' → ')
             const destLines = splitBoldLines(doc, destText, colW - 4)
             const rowH = 8 + (destLines.length - 1) * DEST_LINE_H
